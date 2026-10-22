@@ -12,6 +12,14 @@ An odd count MUST be seated so that nobody is only an observer. Three
 people form a ring: each person asks one other. A supported live session
 is 2 to 8 people. Specs MUST NOT extend this format to a larger room.
 
+The group MUST NOT store a standing facilitator. A group MAY hold more
+than one session in the same week. The group creator creates the first
+session and sets its topics. At the start of every session, the members
+in that session elect the facilitator from among themselves. That
+election is the only way someone becomes the facilitator. On every later
+session, the elected facilitator sets the topics. A session MUST still
+start when whoever facilitated a previous session is absent.
+
 Rationale: these groups fail when the person who prepared is absent. The
 reason to pay is a useful session on the night people actually attend.
 
@@ -76,13 +84,14 @@ product a prototype.
 
 ### V. A Facilitator Runs It Alone
 
-A facilitator who did not write Quorum MUST be able to open a session, seat
-whoever is present, advance the blocks, show the current question, record
-the rubric, and close the session from the web UI.
+A person who did not write Quorum, and who is present for that session,
+MUST be able to open it, seat whoever is present, advance the blocks, show
+the current question, record the rubric, and close the session from the
+web UI. The group has no permanent facilitator for them to replace.
 
 The web UI is the system of record for live state. Notification channels,
 including Telegram, are adapters. A session MUST be completable with no
-adapter connected. Voice and video are a link the facilitator supplies.
+adapter connected. Voice and video are a link whoever is present supplies.
 Quorum MUST NOT host media.
 
 Rationale: a tool that needs its author on the call cannot be sold. A
@@ -121,15 +130,17 @@ Stack, until amended:
 - One process on one small virtual machine is a sufficient production
   shape. A session MUST be runnable without a cluster, a second region, or
   an external account for payments, media, identity, or messaging.
-- A facilitator account is required to create and close sessions. A member
-  joins a live session with a display name and a session link. A Telegram
-  identifier MAY be stored as contact data and MUST NOT be the only key
-  for a member.
+- An account is how a person signs in. It is not a facilitator role on
+  the group. The same account MAY belong to more than one group, with a
+  display name chosen for each group. At session start the members in
+  that session elect one of themselves as facilitator. A member may also
+  be present with a display name and no account. A Telegram identifier
+  MAY be stored as contact data and MUST NOT be the only key for a member.
 
 Privacy and content rights:
 
 - Scores and written answers are visible to the member who produced them
-  and to facilitators of that group. Another member sees feedback only
+  and to accounts of that group. Another member sees feedback only
   inside the live turn they share.
 - Logs MUST NOT contain answer text, rubric notes, or scores.
 - Items a group authors MUST NOT be readable by another group.
@@ -199,4 +210,10 @@ past one process and one database is justified in the spec.
 Specs and plans hold implementation detail. This file holds rules that
 stay true across features.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-22 | **Last Amended**: 2026-10-22
+### Amendment history
+
+**1.1.0 (2026-10-22)**: The group stores no standing facilitator. Spec to reconcile: `specs/001-group-catalog`.
+
+**1.2.0 (2026-10-22)**: An account may belong to more than one group, with a display name chosen per group. A group may hold more than one session in the same week. The group creator creates the first session and sets its topics. At the start of every session, the members in that session elect the facilitator. On every later session, that facilitator sets the topics. Spec to reconcile: `specs/001-group-catalog`.
+
+**Version**: 1.2.0 | **Ratified**: 2026-10-22 | **Last Amended**: 2026-10-22
