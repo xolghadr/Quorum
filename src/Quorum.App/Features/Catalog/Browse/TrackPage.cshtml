@@ -1,0 +1,13 @@
+@page "/catalog/tracks/{trackKey}"
+@model Quorum.App.Features.Catalog.Browse.TrackPageModel
+<h1>@Model.Title</h1>
+@if (Model.Reviewed)
+{
+    <p>Reviewed</p>
+}
+<ul>
+    @foreach (var topic in Model.Topics)
+    {
+        <li><a href="/catalog/topics/@topic.Key">@topic.Title</a></li>
+    }
+</ul>

@@ -1,0 +1,24 @@
+@page "/catalog"
+@model Quorum.App.Features.Catalog.Browse.CatalogIndexModel
+<h1>Catalog</h1>
+@if (!Model.Published)
+{
+    <p>The answer key is not available yet.</p>
+}
+else
+{
+    <p>Last modification date: @Model.CompletedOn!.Value.ToString("yyyy-MM-dd")</p>
+    <ul>
+        @foreach (var track in Model.Tracks)
+        {
+            <li><a href="/catalog/tracks/@track.Key">@track.Title</a></li>
+        }
+    </ul>
+    <h2>Worked designs</h2>
+    <ul>
+        @foreach (var design in Model.Designs)
+        {
+            <li><a href="/catalog/designs/@design.Key">@design.Title</a></li>
+        }
+    </ul>
+}

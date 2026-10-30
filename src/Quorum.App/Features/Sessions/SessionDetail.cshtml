@@ -1,0 +1,108 @@
+@page "/sessions/{sessionId:guid}"
+@model Quorum.App.Features.Sessions.SessionDetailModel
+<h1>Session @Model.Number</h1>
+<p>Date: @Model.CreatedOn.ToString("yyyy-MM-dd")</p>
+<p>@(Model.Facilitator == "not elected" ? "not elected" : Model.Facilitator)</p>
+@if (Model.Error is not null)
+{
+    <p>@Model.Error</p>
+}
+@if (Model.Topics.Count == 0)
+{
+    <p>not set</p>
+}
+else
+{
+    <ul>
+        @foreach (var topic in Model.Topics)
+        {
+            <li><a href="/catalog/topics/@topic.Key">@topic.Title</a></li>
+        }
+    </ul>
+}
+<h2>Present</h2>
+@if (Model.Present.Count == 0)
+{
+    <p>No one is marked present.</p>
+}
+<ul>
+    @foreach (var person in Model.Present)
+    {
+        <li>@person.DisplayName</li>
+    }
+</ul>
+<form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/attendance">
+    @foreach (var person in Model.ActiveMembers)
+    {
+        var selected = Model.Present.Any(row => row.Id == person.Id);
+        <label>
+            <input type="checkbox" name="members" value="@person.Id" @(selected ? "checked" : null) />
+            @person.DisplayName
+        </label>
+    }
+    <button type="submit">Save attendance</button>
+</form>
+@if (Model.CanEditTopics)
+{
+    <form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/topics">
+        <label>Topic 1
+            <select name="Topic1">
+                <option value="">Choose a topic</option>
+                @foreach (var topic in Model.Chooser)
+                {
+                    <option value="@topic.Id">@topic.Title</option>
+                }
+            </select>
+        </label>
+        <label>Topic 2
+            <select name="Topic2">
+                <option value="">Choose a topic</option>
+                @foreach (var topic in Model.Chooser)
+                {
+                    <option value="@topic.Id">@topic.Title</option>
+                }
+            </select>
+        </label>
+        <label>Topic 3
+            <select name="Topic3">
+                <option value="">Choose a topic</option>
+                @foreach (var topic in Model.Chooser)
+                {
+                    <option value="@topic.Id">@topic.Title</option>
+                }
+            </select>
+        </label>
+        <button type="submit">Save topics</button>
+    </form>
+}
+<h2>Votes</h2>
+@if (!Model.VotingLocked)
+{
+    var candidates = Model.Voters.Count > 0 ? Model.Voters : Model.Present;
+    var pending = (Model.Voters.Count > 0 ? Model.Voters : Model.Present)
+        .Where(person => Model.Votes.All(vote => vote.VoterId != person.Id));
+    foreach (var voter in pending)
+    {
+        <form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/votes">
+            <input type="hidden" name="voterId" value="@voter.Id" />
+            <label>@voter.DisplayName
+                <select name="candidateId">
+                    @foreach (var candidate in candidates)
+                    {
+                        if (candidates.Count >= 3 && candidate.Id == voter.Id)
+                            continue;
+                        <option value="@candidate.Id">@candidate.DisplayName</option>
+                    }
+                </select>
+            </label>
+            <button type="submit">Record vote</button>
+        </form>
+    }
+}
+<ul>
+    @foreach (var vote in Model.Votes)
+    {
+        <li>@vote.Voter voted for @vote.Candidate</li>
+    }
+</ul>
+<p><a href="/sessions">All sessions</a></p>

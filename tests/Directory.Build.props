@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="$(MSBuildThisFileDirectory)Support\*.cs" Link="Support\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

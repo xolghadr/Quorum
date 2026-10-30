@@ -1,0 +1,87 @@
+@page "/sessions"
+@model Quorum.App.Features.Sessions.SessionIndexModel
+<h1>Sessions</h1>
+@if (!Model.Published)
+{
+    <p>Sessions are not available yet.</p>
+    <p><a href="/catalog">Catalog</a></p>
+}
+else
+{
+    @if (Model.Error is not null)
+    {
+        <p>@Model.Error</p>
+    }
+    @if (Model.Sessions.Count == 0)
+    {
+        <p>No session yet.</p>
+    }
+    <ul>
+        @foreach (var session in Model.Sessions)
+        {
+            <li>
+                <a href="/sessions/@session.Id">Session @session.Number</a>
+                <span>Date: @session.CreatedOn.ToString("yyyy-MM-dd")</span>
+                @if (session.Topics.Count == 0)
+                {
+                    <span>not set</span>
+                }
+                else
+                {
+                    <span>
+                        @for (var index = 0; index < session.Topics.Count; index++)
+                        {
+                            if (index > 0)
+                            {
+                                <text>, </text>
+                            }
+                            var topic = session.Topics[index];
+                            <a href="/catalog/topics/@topic.Key">@topic.Title</a>
+                        }
+                    </span>
+                }
+                <span>@(session.Facilitator ?? "not elected")</span>
+            </li>
+        }
+    </ul>
+    @if (!Model.HasSessions && Model.IsCreator)
+    {
+        <form method="post" asp-antiforgery="true" action="/sessions">
+            <label>Topic 1
+                <select name="Topic1">
+                    <option value="">Choose a topic</option>
+                    @foreach (var topic in Model.Chooser)
+                    {
+                        <option value="@topic.Id">@topic.Title</option>
+                    }
+                </select>
+            </label>
+            <label>Topic 2
+                <select name="Topic2">
+                    <option value="">Choose a topic</option>
+                    @foreach (var topic in Model.Chooser)
+                    {
+                        <option value="@topic.Id">@topic.Title</option>
+                    }
+                </select>
+            </label>
+            <label>Topic 3
+                <select name="Topic3">
+                    <option value="">Choose a topic</option>
+                    @foreach (var topic in Model.Chooser)
+                    {
+                        <option value="@topic.Id">@topic.Title</option>
+                    }
+                </select>
+            </label>
+            <button type="submit">Create the first session</button>
+        </form>
+    }
+    else if (Model.HasSessions)
+    {
+        <form method="post" asp-antiforgery="true" action="/sessions">
+            <button type="submit">Create the next session</button>
+        </form>
+    }
+    <p><a href="/catalog">Catalog</a></p>
+}

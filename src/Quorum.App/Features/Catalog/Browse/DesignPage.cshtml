@@ -1,0 +1,8 @@
+@page "/catalog/designs/{designKey}"
+@model Quorum.App.Features.Catalog.Browse.DesignPageModel
+<h1>@Model.Title</h1>
+@if (!string.IsNullOrWhiteSpace(Model.Level))
+{
+    <p>Level: @Model.Level</p>
+}
+<div class="prose">@Model.Markdown</div>

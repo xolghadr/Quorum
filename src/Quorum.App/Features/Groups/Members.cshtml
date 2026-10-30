@@ -1,0 +1,35 @@
+@page "/members"
+@model Quorum.App.Features.Groups.MembersModel
+<h1>Members</h1>
+@if (Model.Error is not null)
+{
+    <p>@Model.Error</p>
+}
+<ul>
+    @foreach (var member in Model.Members)
+    {
+        <li>
+            <span>@member.DisplayName</span>
+            @if (Model.IsCreator)
+            {
+                <form method="post" asp-antiforgery="true" action="/members/@member.Id/rename">
+                    <label>New name <input type="text" name="displayName" value="@member.DisplayName" /></label>
+                    <button type="submit">Rename</button>
+                </form>
+                @if (!member.IsCreator)
+                {
+                    <form method="post" asp-antiforgery="true" action="/members/@member.Id/remove">
+                        <button type="submit">Remove</button>
+                    </form>
+                }
+            }
+        </li>
+    }
+</ul>
+@if (Model.IsCreator)
+{
+    <form method="post" asp-antiforgery="true" action="/members">
+        <label>Display name <input asp-for="DisplayName" type="text" /></label>
+        <button type="submit">Add member</button>
+    </form>
+}

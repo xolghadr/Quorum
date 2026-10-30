@@ -1,0 +1,8 @@
+@page "/groups/new"
+@model Quorum.App.Features.Groups.GroupNewModel
+<h1>Create a group</h1>
+<form method="post" asp-antiforgery="true" action="/groups">
+    <label>Group name <input asp-for="Name" type="text" /></label>
+    <label>Your display name in this group <input asp-for="DisplayName" type="text" /></label>
+    <button type="submit">Create group</button>
+</form>

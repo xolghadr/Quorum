@@ -1,0 +1,36 @@
+@page "/catalog/topics/{*topicKey}"
+@model Quorum.App.Features.Catalog.Browse.TopicPageModel
+<h1>@Model.Title</h1>
+<p>Level: @Model.Level</p>
+@if (!string.IsNullOrWhiteSpace(Model.YouCan))
+{
+    <p>You can: @Model.YouCan</p>
+}
+@if (!string.IsNullOrWhiteSpace(Model.Body))
+{
+    <div class="prose">@Model.Body</div>
+}
+<p>Pick count: @Model.PickCount</p>
+@if (Model.Reviewed)
+{
+    <p>Reviewed</p>
+}
+@foreach (var part in Model.Sections)
+{
+    <section>
+        <h2>@part.Title</h2>
+        @if (part.Key is "review" or "interview")
+        {
+            <ul>
+                @foreach (var question in part.Questions)
+                {
+                    <li>@(part.Key == "review" ? "Review" : "Interview"): @question</li>
+                }
+            </ul>
+        }
+        else
+        {
+            <div class="prose">@part.Markdown</div>
+        }
+    </section>
+}

@@ -1,0 +1,24 @@
+@page "/groups"
+@model Quorum.App.Features.Groups.GroupListModel
+<h1>Groups</h1>
+@if (Model.Error is not null)
+{
+    <p>@Model.Error</p>
+}
+<ul>
+    @foreach (var group in Model.Groups)
+    {
+        <li>
+            <form method="post" asp-antiforgery="true" action="/groups/@group.Id/open">
+                <button type="submit">@group.Name</button>
+            </form>
+            <span>@group.DisplayName</span>
+        </li>
+    }
+</ul>
+<form method="post" asp-antiforgery="true" action="/groups">
+    <label>Group name <input asp-for="Name" type="text" /></label>
+    <label>Your display name in this group <input asp-for="DisplayName" type="text" /></label>
+    <button type="submit">Create group</button>
+</form>
+<p><a href="/groups/new">Create another group</a></p>

@@ -1,0 +1,89 @@
+using Microsoft.AspNetCore.Mvc;
+using Quorum.App.Features.Shared;
+using Quorum.App.SharedKernel;
+
+namespace Quorum.App.Features.Sessions;
+
+public sealed class AttendancePostModel : SignedInPageModel
+{
+    private readonly Election _election;
+
+    public AttendancePostModel(Election election)
+    {
+        _election = election;
+    }
+
+    public async Task<IActionResult> OnPostAsync(Guid sessionId, Guid[]? members, CancellationToken cancellationToken)
+    {
+        if (OpenGroupId is not { } groupId)
+            return Challenge();
+        var ids = (members ?? []).Select(id => new MemberId(id)).ToList();
+        var result = await _election.SaveAttendanceAsync(groupId, AccountId, new SessionId(sessionId), ids, cancellationToken);
+        if (result.Status == Shared.CommandStatus.NotFound)
+            return NotFound();
+        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1");
+    }
+}
+
+public sealed class TopicsPostModel : SignedInPageModel
+{
+    private readonly SessionCommands _sessions;
+
+    public TopicsPostModel(SessionCommands sessions)
+    {
+        _sessions = sessions;
+    }
+
+    public async Task<IActionResult> OnPostAsync(
+        Guid sessionId,
+        string? topic1,
+        string? topic2,
+        string? topic3,
+        CancellationToken cancellationToken)
+    {
+        if (OpenGroupId is not { } groupId)
+            return Challenge();
+        var ids = new List<Guid>();
+        foreach (var value in new[] { topic1, topic2, topic3 })
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+            ids.Add(Guid.TryParse(value, out var id) ? id : Guid.Empty);
+        }
+
+        var result = await _sessions.SaveTopicsAsync(groupId, AccountId, new SessionId(sessionId), ids, cancellationToken);
+        if (result.Status == Shared.CommandStatus.NotFound)
+            return NotFound();
+        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1");
+    }
+}
+
+public sealed class VotesPostModel : SignedInPageModel
+{
+    private readonly Election _election;
+
+    public VotesPostModel(Election election)
+    {
+        _election = election;
+    }
+
+    public async Task<IActionResult> OnPostAsync(
+        Guid sessionId,
+        Guid voterId,
+        Guid candidateId,
+        CancellationToken cancellationToken)
+    {
+        if (OpenGroupId is not { } groupId)
+            return Challenge();
+        var result = await _election.CastVoteAsync(
+            groupId,
+            AccountId,
+            new SessionId(sessionId),
+            new MemberId(voterId),
+            new MemberId(candidateId),
+            cancellationToken);
+        if (result.Status == Shared.CommandStatus.NotFound)
+            return NotFound();
+        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1");
+    }
+}

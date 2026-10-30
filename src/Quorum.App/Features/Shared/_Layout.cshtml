@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quorum</title>
+    <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+    <header>
+        <a href="/">Quorum</a>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <nav>
+                <a href="/catalog">Catalog</a>
+                <a href="/sessions">Sessions</a>
+                <a href="/members">Members</a>
+                <a href="/groups">Groups</a>
+                <form method="post" asp-antiforgery="true" action="/account/sign-out">
+                    <button type="submit">Sign out</button>
+                </form>
+            </nav>
+        }
+    </header>
+    <main>
+        @RenderBody()
+    </main>
+</body>
+</html>

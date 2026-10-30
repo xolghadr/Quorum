@@ -1,0 +1,13 @@
+@page "/account/sign-in"
+@model Quorum.App.Features.Accounts.SignInModel
+<h1>Sign in</h1>
+@if (Model.Error is not null)
+{
+    <p>@Model.Error</p>
+}
+<form method="post" asp-antiforgery="true" action="/account/sign-in">
+    <label>Email <input asp-for="Email" type="email" autocomplete="username" /></label>
+    <label>Password <input asp-for="Password" type="password" autocomplete="current-password" /></label>
+    <button type="submit">Sign in</button>
+</form>
+<p><a href="/account/register">Create an account</a></p>
