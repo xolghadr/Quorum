@@ -1,0 +1,6 @@
+@using Quorum.App.Infrastructure.Logging
+@inject SafeLog Activity
+@if (!string.IsNullOrEmpty(Activity.CurrentReference))
+{
+@Activity.CurrentReference
+}

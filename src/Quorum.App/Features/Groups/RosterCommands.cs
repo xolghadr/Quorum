@@ -28,27 +28,30 @@ public sealed class RosterCommands
         string? displayName,
         CancellationToken cancellationToken = default)
     {
+        _log.Begin();
         var group = await OwnedGroup(groupId, actorId, cancellationToken);
         if (group is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.NotFound(), cancellationToken);
         if (!Membership.DisplayNameAccepted(displayName, out var shown))
-            return CommandOutcome.Refused();
+            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
 
         var active = await Active(groupId, cancellationToken);
         if (active.Count >= Group.MemberMax)
-            return CommandOutcome.Refused();
+            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
         if (active.Any(member => member.DisplayNameKey == Membership.KeyFor(shown)))
-            return CommandOutcome.Refused();
+            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
 
-        _db.Memberships.Add(new Membership
+        var membership = new Membership
         {
             Id = MemberId.New(),
             GroupId = groupId,
             DisplayName = shown,
             DisplayNameKey = Membership.KeyFor(shown),
             CreatedAt = _clock.UtcNow,
-        });
+        };
+        _db.Memberships.Add(membership);
         await _db.SaveChangesAsync(cancellationToken);
+        await RecordAsync(new ActivityWrite("add-member", true, actorId.Value, groupId.Value, MemberId: membership.Id.Value), cancellationToken);
         _log.Command("add-member", actorId, groupId);
         return CommandOutcome.Ok();
     }
@@ -60,17 +63,18 @@ public sealed class RosterCommands
         string? displayName,
         CancellationToken cancellationToken = default)
     {
+        _log.Begin();
         var group = await OwnedGroup(groupId, actorId, cancellationToken);
         if (group is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("rename-member", actorId, groupId, memberId, CommandOutcome.NotFound(), cancellationToken);
         if (!Membership.DisplayNameAccepted(displayName, out var shown))
-            return CommandOutcome.Refused();
+            return await Refuse("rename-member", actorId, groupId, memberId, CommandOutcome.Refused(), cancellationToken);
 
         var membership = await _db.Memberships.FirstOrDefaultAsync(
             member => member.Id == memberId && member.GroupId == groupId && member.RemovedAt == null,
             cancellationToken);
         if (membership is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("rename-member", actorId, groupId, memberId, CommandOutcome.NotFound(), cancellationToken);
 
         var key = Membership.KeyFor(shown);
         var collision = await _db.Memberships.AnyAsync(
@@ -80,11 +84,12 @@ public sealed class RosterCommands
                 && member.DisplayNameKey == key,
             cancellationToken);
         if (collision)
-            return CommandOutcome.Refused();
+            return await Refuse("rename-member", actorId, groupId, memberId, CommandOutcome.Refused(), cancellationToken);
 
         membership.DisplayName = shown;
         membership.DisplayNameKey = key;
         await _db.SaveChangesAsync(cancellationToken);
+        await RecordAsync(new ActivityWrite("rename-member", true, actorId.Value, groupId.Value, MemberId: memberId.Value), cancellationToken);
         _log.Command("rename-member", actorId, groupId);
         return CommandOutcome.Ok();
     }
@@ -95,22 +100,42 @@ public sealed class RosterCommands
         MemberId memberId,
         CancellationToken cancellationToken = default)
     {
+        _log.Begin();
         var group = await OwnedGroup(groupId, actorId, cancellationToken);
         if (group is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("remove-member", actorId, groupId, memberId, CommandOutcome.NotFound(), cancellationToken);
 
         var membership = await _db.Memberships.FirstOrDefaultAsync(
             member => member.Id == memberId && member.GroupId == groupId && member.RemovedAt == null,
             cancellationToken);
         if (membership is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("remove-member", actorId, groupId, memberId, CommandOutcome.NotFound(), cancellationToken);
         if (membership.AccountId == group.CreatorAccountId)
-            return CommandOutcome.Refused();
+            return await Refuse("remove-member", actorId, groupId, memberId, CommandOutcome.Refused(), cancellationToken);
 
         membership.RemovedAt = _clock.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
+        await RecordAsync(new ActivityWrite("remove-member", true, actorId.Value, groupId.Value, MemberId: memberId.Value), cancellationToken);
         _log.Command("remove-member", actorId, groupId);
         return CommandOutcome.Ok();
+    }
+
+    private async Task<CommandOutcome> Refuse(
+        string attempt,
+        AccountId actorId,
+        GroupId groupId,
+        MemberId? memberId,
+        CommandOutcome outcome,
+        CancellationToken cancellationToken)
+    {
+        await RecordAsync(new ActivityWrite(attempt, false, actorId.Value, groupId.Value, MemberId: memberId?.Value), cancellationToken);
+        return outcome;
+    }
+
+    private async Task RecordAsync(ActivityWrite write, CancellationToken cancellationToken)
+    {
+        await _log.RecordAsync(write, cancellationToken);
+        _log.Finish();
     }
 
     private async Task<Group?> OwnedGroup(GroupId groupId, AccountId actorId, CancellationToken cancellationToken)

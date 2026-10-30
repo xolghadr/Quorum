@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Quorum.App.Features.Shared;
+using Quorum.App.Infrastructure.Logging;
 using Quorum.App.Infrastructure.Persistence;
 
 namespace Quorum.App.Features.Groups;
@@ -9,11 +10,13 @@ public sealed class MembersModel : SignedInPageModel
 {
     private readonly QuorumDbContext _db;
     private readonly RosterCommands _roster;
+    private readonly SafeLog _log;
 
-    public MembersModel(QuorumDbContext db, RosterCommands roster)
+    public MembersModel(QuorumDbContext db, RosterCommands roster, SafeLog log)
     {
         _db = db;
         _roster = roster;
+        _log = log;
     }
 
     public bool IsCreator { get; private set; }
@@ -30,7 +33,10 @@ public sealed class MembersModel : SignedInPageModel
             return gate;
         await LoadAsync(cancellationToken);
         if (Request.Query.ContainsKey("error"))
+        {
+            _log.AdoptReference(Request.Query["reference"]);
             Error = RosterCommands.InvalidNameMessage;
+        }
         return Page();
     }
 

@@ -22,7 +22,13 @@ public sealed class SignOutModel : PageModel
     public async Task<IActionResult> OnPostAsync()
     {
         if (User.Identity?.IsAuthenticated == true)
-            _log.Command("sign-out", Infrastructure.Auth.SignInSession.Account(User));
+        {
+            var account = Infrastructure.Auth.SignInSession.Account(User);
+            _log.Begin();
+            await _log.RecordAsync(new ActivityWrite("sign-out", true, account?.Value));
+            _log.Finish();
+            _log.Command("sign-out", account);
+        }
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         return Redirect("/account/sign-in");
     }

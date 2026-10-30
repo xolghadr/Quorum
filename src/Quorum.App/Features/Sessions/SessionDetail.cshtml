@@ -6,6 +6,7 @@
 @if (Model.Error is not null)
 {
     <p>@Model.Error</p>
+    <partial name="/Features/Shared/_Reference.cshtml" />
 }
 @if (Model.Topics.Count == 0)
 {

@@ -28,12 +28,19 @@ public sealed class GroupCommands
         string? displayName,
         CancellationToken cancellationToken = default)
     {
+        _log.Begin();
         if (!Group.NameAccepted(name, out var groupName) || !Membership.DisplayNameAccepted(displayName, out var shown))
+        {
+            await RecordAsync(new ActivityWrite("create-group", false, accountId.Value), cancellationToken);
             return CommandOutcome.Refused();
+        }
 
         var accountExists = await _db.Accounts.AnyAsync(account => account.Id == accountId, cancellationToken);
         if (!accountExists)
+        {
+            await RecordAsync(new ActivityWrite("create-group", false, accountId.Value), cancellationToken);
             return CommandOutcome.NotFound();
+        }
 
         var group = new Group
         {
@@ -54,7 +61,14 @@ public sealed class GroupCommands
         _db.Groups.Add(group);
         _db.Memberships.Add(membership);
         await _db.SaveChangesAsync(cancellationToken);
+        await RecordAsync(new ActivityWrite("create-group", true, accountId.Value, group.Id.Value, MemberId: membership.Id.Value), cancellationToken);
         _log.Command("create-group", accountId, group.Id);
         return CommandOutcome.Ok(group.Id.Value);
+    }
+
+    private async Task RecordAsync(ActivityWrite write, CancellationToken cancellationToken)
+    {
+        await _log.RecordAsync(write, cancellationToken);
+        _log.Finish();
     }
 }

@@ -1,0 +1,82 @@
+extensions:
+  basicauth/server:
+    htpasswd:
+      file: /etc/otel/auth/htpasswd
+  basicauth/prometheus:
+    client_auth:
+      username: ${env:PROMETHEUS_USER}
+      password: ${env:PROMETHEUS_PASSWORD}
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: basicauth/server
+
+processors:
+  attributes/allowlist:
+    actions:
+      - key: http.request.body
+        action: delete
+      - key: db.statement
+        action: delete
+      - key: db.query.text
+        action: delete
+      - key: email
+        action: delete
+      - key: user.email
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: url.query
+        action: delete
+      - key: url.full
+        action: delete
+  transform/allowlist:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - keep_keys(attributes, ["quorum.attempt", "quorum.outcome", "quorum.reason", "quorum.reference", "quorum.duration_ms", "quorum.storage_wait_ms", "quorum.account_id", "quorum.group_id", "quorum.session_id", "quorum.member_id", "quorum.tracks", "quorum.topics", "quorum.designs", "service.name"])
+    log_statements:
+      - context: log
+        statements:
+          - keep_keys(attributes, ["quorum.attempt", "quorum.outcome", "quorum.reason", "quorum.reference", "quorum.duration_ms", "quorum.storage_wait_ms", "quorum.account_id", "quorum.group_id", "quorum.session_id", "quorum.member_id", "quorum.tracks", "quorum.topics", "quorum.designs", "service.name"])
+    metric_statements:
+      - context: datapoint
+        statements:
+          - keep_keys(attributes, ["attempt", "outcome"])
+  # Prometheus remote write drops delta sums. Accumulate for longer than one quiet hour
+  # so the last-hour increase keeps every attempt in the 14-day window.
+  delta_to_cumulative:
+    max_stale: 336h
+
+exporters:
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    auth:
+      authenticator: basicauth/prometheus
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+service:
+  extensions: [basicauth/server, basicauth/prometheus]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [attributes/allowlist, transform/allowlist]
+      exporters: [otlphttp/loki]
+    metrics:
+      receivers: [otlp]
+      processors: [attributes/allowlist, transform/allowlist, delta_to_cumulative]
+      exporters: [prometheusremotewrite]
+    traces:
+      receivers: [otlp]
+      processors: [attributes/allowlist, transform/allowlist]
+      exporters: [otlp/tempo]

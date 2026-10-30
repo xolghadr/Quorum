@@ -4,6 +4,7 @@
 @if (Model.Error is not null)
 {
     <p>@Model.Error</p>
+    <partial name="/Features/Shared/_Reference.cshtml" />
 }
 <ul>
     @foreach (var group in Model.Groups)

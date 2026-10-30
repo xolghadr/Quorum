@@ -4,6 +4,7 @@
 @if (Model.Error is not null)
 {
     <p>@Model.Error</p>
+    <partial name="/Features/Shared/_Reference.cshtml" />
 }
 <form method="post" asp-antiforgery="true" action="/account/register">
     <label>Email <input asp-for="Email" type="email" autocomplete="username" /></label>

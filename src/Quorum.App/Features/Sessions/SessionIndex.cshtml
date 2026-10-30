@@ -11,6 +11,7 @@ else
     @if (Model.Error is not null)
     {
         <p>@Model.Error</p>
+        <partial name="/Features/Shared/_Reference.cshtml" />
     }
     @if (Model.Sessions.Count == 0)
     {

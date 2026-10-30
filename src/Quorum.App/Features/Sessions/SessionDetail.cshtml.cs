@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Quorum.App.Features.Shared;
+using Quorum.App.Infrastructure.Logging;
 using Quorum.App.Infrastructure.Persistence;
 using Quorum.App.SharedKernel;
 
@@ -9,10 +10,12 @@ namespace Quorum.App.Features.Sessions;
 public sealed class SessionDetailModel : SignedInPageModel
 {
     private readonly QuorumDbContext _db;
+    private readonly SafeLog _log;
 
-    public SessionDetailModel(QuorumDbContext db)
+    public SessionDetailModel(QuorumDbContext db, SafeLog log)
     {
         _db = db;
+        _log = log;
     }
 
     public Guid SessionId { get; private set; }
@@ -96,7 +99,10 @@ public sealed class SessionDetailModel : SignedInPageModel
             Chooser = await SessionCommands.ChooserAsync(_db, OpenGroupId!.Value, cancellationToken);
 
         if (Request.Query.ContainsKey("error"))
+        {
+            _log.AdoptReference(Request.Query["reference"]);
             Error = "That change was not saved.";
+        }
         return Page();
     }
 

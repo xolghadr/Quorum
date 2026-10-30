@@ -421,6 +421,87 @@ namespace Quorum.App.Infrastructure.Persistence.Migrations
                     b.ToTable("TopicProgress");
                 });
 
+            modelBuilder.Entity("Quorum.App.Infrastructure.Logging.ActivityRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Attempt")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int?>("Designs")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("ExportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MemberId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)");
+
+                    b.Property<Guid?>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("StorageWaitMs")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("Topics")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("Tracks")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcceptedAt");
+
+                    b.HasIndex("ExportedAt")
+                        .HasFilter("\"ExportedAt\" IS NULL");
+
+                    b.HasIndex("Reference", "Attempt")
+                        .IsUnique();
+
+                    b.ToTable("activity_records", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_activity_records_counts", "(\"Attempt\" = 'publish-catalog' AND \"Outcome\" = 'succeeded') OR (\"Tracks\" IS NULL AND \"Topics\" IS NULL AND \"Designs\" IS NULL)");
+
+                            t.HasCheckConstraint("CK_activity_records_duration", "\"DurationMs\" >= 0");
+
+                            t.HasCheckConstraint("CK_activity_records_outcome", "\"Outcome\" IN ('succeeded', 'refused')");
+
+                            t.HasCheckConstraint("CK_activity_records_reason", "\"Reason\" IS NULL OR \"Reason\" = 'unknown-account'");
+
+                            t.HasCheckConstraint("CK_activity_records_storage_wait", "\"StorageWaitMs\" >= 0 AND \"StorageWaitMs\" <= \"DurationMs\"");
+                        });
+                });
+
             modelBuilder.Entity("Quorum.App.Features.Catalog.Question", b =>
                 {
                     b.HasOne("Quorum.App.Features.Catalog.Topic", null)

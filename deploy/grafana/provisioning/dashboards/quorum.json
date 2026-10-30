@@ -1,0 +1,102 @@
+{
+  "uid": "quorum",
+  "title": "Quorum",
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "reference",
+        "type": "textbox",
+        "label": "reference",
+        "current": { "text": "", "value": "" }
+      },
+      {
+        "name": "outcome",
+        "type": "custom",
+        "label": "outcome",
+        "query": "refused,succeeded",
+        "includeAll": true,
+        "allValue": "",
+        "current": { "text": "All", "value": "" }
+      },
+      {
+        "name": "group_id",
+        "type": "textbox",
+        "label": "group id",
+        "current": { "text": "", "value": "" }
+      },
+      {
+        "name": "session_id",
+        "type": "textbox",
+        "label": "session id",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Succeeded",
+      "description": "Each accepted attempt is one sample on quorum_attempts_total. This counts those samples over the last hour.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 0 } },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(count_over_time(quorum_attempts_total{outcome=\"succeeded\"}[1h]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Refused",
+      "description": "Each accepted attempt is one sample on quorum_attempts_total. This counts those samples over the last hour.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "decimals": 0 } },
+      "targets": [
+        {
+          "refId": "A",
+          "instant": true,
+          "expr": "sum(count_over_time(quorum_attempts_total{outcome=\"refused\"}[1h]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Activity",
+      "description": "Empty reference, outcome, group id, and session id fields keep every row. Refused does not include succeeded. Loki stores quorum.group_id and quorum.session_id as quorum_group_id and quorum_session_id. The dashboard time picker is the time range.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"quorum\"} | label_format reference_match=`{{ if eq \"${reference}\" \"\" }}1{{ else }}{{ if eq .quorum_reference \"${reference}\" }}1{{ else }}0{{ end }}{{ end }}`, outcome_match=`{{ if eq \"${outcome}\" \"\" }}1{{ else }}{{ if eq .quorum_outcome \"${outcome}\" }}1{{ else }}0{{ end }}{{ end }}`, group_match=`{{ if eq \"${group_id}\" \"\" }}1{{ else }}{{ if eq .quorum_group_id \"${group_id}\" }}1{{ else }}0{{ end }}{{ end }}`, session_match=`{{ if eq \"${session_id}\" \"\" }}1{{ else }}{{ if eq .quorum_session_id \"${session_id}\" }}1{{ else }}0{{ end }}{{ end }}` | reference_match=\"1\" | outcome_match=\"1\" | group_match=\"1\" | session_match=\"1\""
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "traces",
+      "title": "Attempt",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ resource.service.name = \"quorum\" && name = \"quorum.attempt\" && span.quorum.reference = \"$reference\" && span.quorum.storage_wait_ms =~ \".+\" }"
+        }
+      ]
+    }
+  ]
+}

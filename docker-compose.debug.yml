@@ -1,0 +1,109 @@
+name: quorum-debug
+
+services:
+  auth-init:
+    image: httpd:2.4.69-alpine
+    environment:
+      COLLECTOR_PASSWORD: quorum
+      PROMETHEUS_PASSWORD: quorum
+    volumes:
+      - debug-run:/out
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        htpasswd -nbB quorum "$$COLLECTOR_PASSWORD" > /out/htpasswd
+        line=$$(htpasswd -nbB quorum "$$PROMETHEUS_PASSWORD")
+        hash=$${line#*:}
+        printf 'basic_auth_users:\n  quorum: "%s"\n' "$$hash" > /out/web.yml
+    restart: "no"
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: quorum
+      POSTGRES_PASSWORD: quorum
+      POSTGRES_DB: quorum
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - quorum-debug-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quorum -d quorum"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  loki:
+    image: grafana/loki:3.5.12
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./deploy/loki.yaml:/etc/loki/loki.yaml:ro
+    ports:
+      - "127.0.0.1:3100:3100"
+
+  tempo:
+    image: grafana/tempo:2.8.4
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./deploy/tempo.yaml:/etc/tempo/tempo.yaml:ro
+    ports:
+      - "127.0.0.1:3200:3200"
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+      - "--storage.tsdb.retention.time=14d"
+      - "--web.config.file=/etc/prometheus/auth/web.yml"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - debug-run:/etc/prometheus/auth:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      auth-init:
+        condition: service_completed_successfully
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0
+    command: ["--config=/etc/otel/config.yaml"]
+    environment:
+      PROMETHEUS_USER: quorum
+      PROMETHEUS_PASSWORD: quorum
+    volumes:
+      - ./deploy/otel-collector.yaml:/etc/otel/config.yaml:ro
+      - debug-run:/etc/otel/auth:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+    depends_on:
+      auth-init:
+        condition: service_completed_successfully
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+      prometheus:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:13.2.5
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: quorum
+      GF_PATHS_CONFIG: /etc/grafana/grafana.ini
+      PROMETHEUS_PASSWORD: quorum
+    volumes:
+      - ./deploy/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - loki
+      - prometheus
+      - tempo
+
+volumes:
+  quorum-debug-postgres:
+  debug-run:

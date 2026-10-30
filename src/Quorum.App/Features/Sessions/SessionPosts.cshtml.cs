@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Quorum.App.Features.Shared;
+using Quorum.App.Infrastructure.Logging;
 using Quorum.App.SharedKernel;
 
 namespace Quorum.App.Features.Sessions;
@@ -7,10 +8,12 @@ namespace Quorum.App.Features.Sessions;
 public sealed class AttendancePostModel : SignedInPageModel
 {
     private readonly Election _election;
+    private readonly SafeLog _log;
 
-    public AttendancePostModel(Election election)
+    public AttendancePostModel(Election election, SafeLog log)
     {
         _election = election;
+        _log = log;
     }
 
     public async Task<IActionResult> OnPostAsync(Guid sessionId, Guid[]? members, CancellationToken cancellationToken)
@@ -21,17 +24,19 @@ public sealed class AttendancePostModel : SignedInPageModel
         var result = await _election.SaveAttendanceAsync(groupId, AccountId, new SessionId(sessionId), ids, cancellationToken);
         if (result.Status == Shared.CommandStatus.NotFound)
             return NotFound();
-        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1");
+        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1" + _log.ReferenceParameter());
     }
 }
 
 public sealed class TopicsPostModel : SignedInPageModel
 {
     private readonly SessionCommands _sessions;
+    private readonly SafeLog _log;
 
-    public TopicsPostModel(SessionCommands sessions)
+    public TopicsPostModel(SessionCommands sessions, SafeLog log)
     {
         _sessions = sessions;
+        _log = log;
     }
 
     public async Task<IActionResult> OnPostAsync(
@@ -54,17 +59,19 @@ public sealed class TopicsPostModel : SignedInPageModel
         var result = await _sessions.SaveTopicsAsync(groupId, AccountId, new SessionId(sessionId), ids, cancellationToken);
         if (result.Status == Shared.CommandStatus.NotFound)
             return NotFound();
-        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1");
+        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1" + _log.ReferenceParameter());
     }
 }
 
 public sealed class VotesPostModel : SignedInPageModel
 {
     private readonly Election _election;
+    private readonly SafeLog _log;
 
-    public VotesPostModel(Election election)
+    public VotesPostModel(Election election, SafeLog log)
     {
         _election = election;
+        _log = log;
     }
 
     public async Task<IActionResult> OnPostAsync(
@@ -84,6 +91,6 @@ public sealed class VotesPostModel : SignedInPageModel
             cancellationToken);
         if (result.Status == Shared.CommandStatus.NotFound)
             return NotFound();
-        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1");
+        return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1" + _log.ReferenceParameter());
     }
 }

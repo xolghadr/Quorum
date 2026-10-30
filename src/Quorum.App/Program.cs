@@ -11,6 +11,7 @@ builder.AddQuorumTime();
 builder.AddQuorumPersistence();
 builder.AddQuorumAuth();
 builder.AddQuorumLogging();
+builder.AddQuorumTelemetry();
 builder.AddQuorumWeb();
 builder.AddCatalogPublish();
 
@@ -21,7 +22,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseQuorumAuth();
 app.UseQuorumWeb();
+app.MigrateQuorumDatabase();
 app.RunCatalogCommandIfPresent();
+app.RunActivityCommandIfPresent();
 app.Run();
 
 public partial class Program;

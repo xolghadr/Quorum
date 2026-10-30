@@ -3,6 +3,7 @@ using Quorum.App.Features.Accounts;
 using Quorum.App.Features.Catalog;
 using Quorum.App.Features.Groups;
 using Quorum.App.Features.Sessions;
+using Quorum.App.Infrastructure.Logging;
 
 namespace Quorum.App.Infrastructure.Persistence;
 
@@ -27,10 +28,14 @@ public sealed class QuorumDbContext : DbContext
     public DbSet<SessionVote> SessionVotes => Set<SessionVote>();
     public DbSet<SessionTopic> SessionTopics => Set<SessionTopic>();
     public DbSet<TopicProgress> TopicProgress => Set<TopicProgress>();
+    public DbSet<ActivityRecord> ActivityRecords => Set<ActivityRecord>();
 
     public static QuorumDbContext Create(string connectionString)
     {
-        var options = new DbContextOptionsBuilder<QuorumDbContext>().UseNpgsql(connectionString).Options;
+        var options = new DbContextOptionsBuilder<QuorumDbContext>()
+            .UseNpgsql(connectionString)
+            .AddInterceptors(new StorageWaitInterceptor())
+            .Options;
         return new QuorumDbContext(options);
     }
 

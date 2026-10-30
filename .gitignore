@@ -72,3 +72,6 @@ Thumbs.db
 .idea/
 .env*
 *.log
+
+# Generated tool credentials for Compose. Not a second database.
+deploy/.run/

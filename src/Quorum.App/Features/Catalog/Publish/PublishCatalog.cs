@@ -26,7 +26,9 @@ public sealed class PublishCatalog
         var sourceFlag = Array.IndexOf(args, "--source");
         if (sourceFlag < 0 || sourceFlag + 1 >= args.Length)
         {
-            Console.Error.WriteLine("Catalog publication failed.");
+            using var missing = services.CreateScope();
+            var publisher = missing.ServiceProvider.GetRequiredService<PublishCatalog>();
+            publisher.ReportAsync("Catalog publication failed.").GetAwaiter().GetResult();
             return 1;
         }
 
@@ -39,9 +41,10 @@ public sealed class PublishCatalog
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<QuorumDbContext>();
+        _log.Begin();
         if (await db.CatalogPublications.AnyAsync(cancellationToken))
         {
-            Console.Error.WriteLine("A publication already exists.");
+            await ReportAsync("A publication already exists.");
             _log.Command("publish-catalog");
             return 2;
         }
@@ -121,7 +124,7 @@ public sealed class PublishCatalog
             if (await db.CatalogPublications.AnyAsync(cancellationToken))
             {
                 await transaction.RollbackAsync(cancellationToken);
-                Console.Error.WriteLine("A publication already exists.");
+                await ReportAsync("A publication already exists.");
                 return 2;
             }
 
@@ -133,19 +136,35 @@ public sealed class PublishCatalog
             });
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            _log.Publication(
-                sourceDirectory,
-                parsed.Tracks.Count,
-                parsed.Tracks.Sum(track => track.Topics.Count),
-                parsed.Designs.Count,
-                publicationId);
+            var tracks = parsed.Tracks.Count;
+            var topics = parsed.Tracks.Sum(track => track.Topics.Count);
+            var designs = parsed.Designs.Count;
+            await _log.RecordAsync(new ActivityWrite("publish-catalog", true, Tracks: tracks, Topics: topics, Designs: designs), cancellationToken);
+            _log.Finish();
+            _log.Publication(sourceDirectory, tracks, topics, designs, publicationId);
             return 0;
         }
         catch (Exception)
         {
             await transaction.RollbackAsync(cancellationToken);
-            Console.Error.WriteLine("Catalog publication failed.");
+            await ReportAsync("Catalog publication failed.");
             return 1;
+        }
+    }
+
+    private async Task ReportAsync(string sentence)
+    {
+        try
+        {
+            _log.Begin();
+            await _log.RecordAsync(new ActivityWrite("publish-catalog", false));
+            _log.Finish();
+            var reference = _log.CurrentReference;
+            Console.Error.WriteLine(string.IsNullOrEmpty(reference) ? sentence : sentence + " " + reference);
+        }
+        catch
+        {
+            Console.Error.WriteLine(sentence);
         }
     }
 }

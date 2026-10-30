@@ -108,12 +108,18 @@ public sealed class QuorumLab : IAsyncDisposable
         var ties = new FixedTieBreak();
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddHttpContextAccessor();
         services.AddSingleton<IClock>(time);
         services.AddSingleton<IFacilitatorTieBreak>(ties);
         services.AddSingleton<RoadmapParser>();
         services.AddSingleton<SafeLog>();
         services.AddSingleton<IPasswordHasher<Account>, PasswordHasher<Account>>();
-        services.AddDbContext<QuorumDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddSingleton<StorageWaitInterceptor>();
+        services.AddDbContext<QuorumDbContext>((sp, options) =>
+        {
+            options.UseNpgsql(connectionString);
+            options.AddInterceptors(sp.GetRequiredService<StorageWaitInterceptor>());
+        });
         services.AddScoped<AccountCommands>();
         services.AddScoped<GroupCommands>();
         services.AddScoped<RosterCommands>();

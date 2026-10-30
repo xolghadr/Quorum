@@ -51,29 +51,30 @@ public sealed class Election
         QuorumDbContext db,
         CancellationToken cancellationToken = default)
     {
+        _log.Begin();
         if (!await IsMember(db, groupId, accountId, cancellationToken))
-            return CommandOutcome.NotFound();
+            return await Refuse("save-attendance", accountId, groupId, sessionId, memberId: null, CommandOutcome.NotFound(), cancellationToken);
 
         var session = await db.Sessions.FirstOrDefaultAsync(
             row => row.Id == sessionId && row.GroupId == groupId,
             cancellationToken);
         if (session is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("save-attendance", accountId, groupId, sessionId, memberId: null, CommandOutcome.NotFound(), cancellationToken);
 
         var distinct = memberIds.Distinct().ToList();
         if (distinct.Count != memberIds.Count)
-            return CommandOutcome.Refused();
+            return await Refuse("save-attendance", accountId, groupId, sessionId, memberId: null, CommandOutcome.Refused(), cancellationToken);
 
         var active = await db.Memberships
             .Where(member => member.GroupId == groupId && member.RemovedAt == null)
             .Select(member => member.Id)
             .ToListAsync(cancellationToken);
         if (distinct.Any(id => !active.Contains(id)) || distinct.Count > active.Count || distinct.Count > Group.MemberMax)
-            return CommandOutcome.Refused();
+            return await Refuse("save-attendance", accountId, groupId, sessionId, memberId: null, CommandOutcome.Refused(), cancellationToken);
 
         var votingOpen = await db.SessionVoters.AnyAsync(voter => voter.SessionId == sessionId, cancellationToken);
         if (!votingOpen && distinct.Count is < 2 or > Group.MemberMax)
-            return CommandOutcome.Refused();
+            return await Refuse("save-attendance", accountId, groupId, sessionId, memberId: null, CommandOutcome.Refused(), cancellationToken);
 
         var existing = await db.SessionAttendance.Where(row => row.SessionId == sessionId).ToListAsync(cancellationToken);
         db.SessionAttendance.RemoveRange(existing);
@@ -87,6 +88,8 @@ public sealed class Election
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await RecordAsync(new ActivityWrite("save-attendance", true, accountId.Value, groupId.Value, sessionId.Value), cancellationToken);
+        _log.Finish();
         _log.Command("save-attendance", accountId, groupId, sessionId);
         return CommandOutcome.Ok();
     }
@@ -109,16 +112,17 @@ public sealed class Election
         IFacilitatorTieBreak tieBreak,
         CancellationToken cancellationToken = default)
     {
+        _log.Begin();
         if (!await IsMember(_db, groupId, accountId, cancellationToken))
-            return CommandOutcome.NotFound();
+            return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.NotFound(), cancellationToken);
 
         var session = await _db.Sessions.FirstOrDefaultAsync(
             row => row.Id == sessionId && row.GroupId == groupId,
             cancellationToken);
         if (session is null)
-            return CommandOutcome.NotFound();
+            return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.NotFound(), cancellationToken);
         if (session.FacilitatorMembershipId is not null)
-            return CommandOutcome.Refused();
+            return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
 
         var voters = await _db.SessionVoters
             .Where(voter => voter.SessionId == sessionId)
@@ -132,11 +136,11 @@ public sealed class Election
                 .Select(row => row.MembershipId)
                 .ToListAsync(cancellationToken);
             if (attendance.Count is < 2 or > Group.MemberMax)
-                return CommandOutcome.Refused();
+                return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
             if (!attendance.Contains(voterId) || !attendance.Contains(candidateId))
-                return CommandOutcome.Refused();
+                return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
             if (attendance.Count >= 3 && voterId == candidateId)
-                return CommandOutcome.Refused();
+                return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
 
             foreach (var memberId in attendance)
             {
@@ -152,14 +156,14 @@ public sealed class Election
         else
         {
             if (!voters.Contains(voterId) || !voters.Contains(candidateId))
-                return CommandOutcome.Refused();
+                return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
             if (voters.Count >= 3 && voterId == candidateId)
-                return CommandOutcome.Refused();
+                return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
             var alreadyVoted = await _db.SessionVotes.AnyAsync(
                 vote => vote.SessionId == sessionId && vote.VoterMembershipId == voterId,
                 cancellationToken);
             if (alreadyVoted)
-                return CommandOutcome.Refused();
+                return await Refuse("cast-vote", accountId, groupId, sessionId, voterId, CommandOutcome.Refused(), cancellationToken);
             votingSet = voters;
         }
 
@@ -178,13 +182,35 @@ public sealed class Election
             .Select(vote => (vote.VoterMembershipId, vote.CandidateMembershipId))
             .Append((voterId, candidateId))
             .ToList();
+        var facilitatorBefore = session.FacilitatorMembershipId;
         if (ballots.Select(ballot => ballot.Item1).Distinct().Count() == votingSet.Count)
             Elect(session, votingSet, ballots, tieBreak);
 
         await _db.SaveChangesAsync(cancellationToken);
+        await RecordAsync(new ActivityWrite("cast-vote", true, accountId.Value, groupId.Value, sessionId.Value, voterId.Value), cancellationToken);
+        if (facilitatorBefore is null && session.FacilitatorMembershipId is { } facilitatorId)
+            await RecordAsync(new ActivityWrite("elect-facilitator", true, accountId.Value, groupId.Value, sessionId.Value, facilitatorId.Value), cancellationToken);
+        _log.Finish();
         _log.Command("cast-vote", accountId, groupId, sessionId);
         return CommandOutcome.Ok();
     }
+
+    private async Task<CommandOutcome> Refuse(
+        string attempt,
+        AccountId accountId,
+        GroupId groupId,
+        SessionId sessionId,
+        MemberId? memberId,
+        CommandOutcome outcome,
+        CancellationToken cancellationToken)
+    {
+        await RecordAsync(new ActivityWrite(attempt, false, accountId.Value, groupId.Value, sessionId.Value, memberId?.Value), cancellationToken);
+        _log.Finish();
+        return outcome;
+    }
+
+    private Task RecordAsync(ActivityWrite write, CancellationToken cancellationToken) =>
+        _log.RecordAsync(write, cancellationToken);
 
     private static void Elect(
         Session session,
