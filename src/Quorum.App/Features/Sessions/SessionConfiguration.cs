@@ -23,6 +23,10 @@ public sealed class SessionConfiguration : IEntityTypeConfiguration<Session>
                 id => id.HasValue ? id.Value.Value : (Guid?)null,
                 value => value.HasValue ? new MemberId(value.Value) : null);
         entity.HasIndex(session => new { session.GroupId, session.Number }).IsUnique();
+        entity.HasIndex(session => session.GroupId)
+            .IsUnique()
+            .HasDatabaseName("IX_Sessions_GroupId_Waiting")
+            .HasFilter("\"FacilitatorMembershipId\" IS NULL");
         entity.HasOne<Group>()
             .WithMany()
             .HasForeignKey(session => session.GroupId)

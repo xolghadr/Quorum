@@ -4,9 +4,10 @@
 
 ### I. Quorum of Two
 
-A live session MUST be startable and finishable by any two members of a
-group. A session MUST NOT depend on one person's advance preparation, a
-designated presenter, or a headcount above two.
+A live session MUST be startable and finishable by any two accepted
+members of a group when that session already exists and already has its
+topics. It MUST NOT depend on a designated presenter or a headcount
+above two. The person who chose the topics does not have to attend.
 
 An odd count MUST be seated so that nobody is only an observer. Three
 people form a ring: each person asks one other. A supported live session
@@ -14,11 +15,15 @@ is 2 to 8 people. Specs MUST NOT extend this format to a larger room.
 
 The group MUST NOT store a standing facilitator. A group MAY hold more
 than one session in the same week. The group creator creates the first
-session and sets its topics. At the start of every session, the members
-in that session elect the facilitator from among themselves. That
-election is the only way someone becomes the facilitator. On every later
-session, the elected facilitator sets the topics. A session MUST still
-start when whoever facilitated a previous session is absent.
+session and chooses its topics. Any accepted member may hold that
+session while the creator is absent. At the start of every session, the
+members in that session elect the facilitator from among themselves.
+That election is the only way someone becomes the facilitator. The
+facilitator elected in a session creates the following session and
+chooses its topics. The session being held keeps the topics its creator
+chose. A session MUST still start when the group creator and whoever
+facilitated a previous session are absent, provided the session already
+has topics.
 
 Rationale: these groups fail when the person who prepared is absent. The
 reason to pay is a useful session on the night people actually attend.
@@ -85,9 +90,11 @@ product a prototype.
 ### V. A Facilitator Runs It Alone
 
 A person who did not write Quorum, and who is present for that session,
-MUST be able to open it, seat whoever is present, advance the blocks, show
-the current question, record the rubric, and close the session from the
-web UI. The group has no permanent facilitator for them to replace.
+MUST be able to open it, mark their own attendance, cast their own vote,
+advance the blocks, show the current question, record the rubric, and
+close the session from the web UI. One member MUST NOT mark another
+member present or cast another member's vote. The group has no permanent
+facilitator for them to replace.
 
 The web UI is the system of record for live state. Notification channels,
 including Telegram, are adapters. A session MUST be completable with no
@@ -133,9 +140,13 @@ Stack, until amended:
 - An account is how a person signs in. It is not a facilitator role on
   the group. The same account MAY belong to more than one group, with a
   display name chosen for each group. At session start the members in
-  that session elect one of themselves as facilitator. A member may also
-  be present with a display name and no account. A Telegram identifier
-  MAY be stored as contact data and MUST NOT be the only key for a member.
+  that session elect one of themselves as facilitator. Every member who
+  can attend, vote, or be elected has an account. A display name with no
+  account is not a member. An accepted member may invite an email. No
+  message is sent. The invitation appears on that person's home,
+  including after they register. Each accepted member marks their own
+  attendance and casts their own vote. A Telegram identifier MAY be
+  stored as contact data and MUST NOT be the only key for a member.
 
 Privacy and content rights:
 
@@ -216,4 +227,6 @@ stay true across features.
 
 **1.2.0 (2026-10-22)**: An account may belong to more than one group, with a display name chosen per group. A group may hold more than one session in the same week. The group creator creates the first session and sets its topics. At the start of every session, the members in that session elect the facilitator. On every later session, that facilitator sets the topics. Spec to reconcile: `specs/001-group-catalog`.
 
-**Version**: 1.2.0 | **Ratified**: 2026-10-22 | **Last Amended**: 2026-10-22
+**1.3.0 (2026-10-31)**: A member who can attend, vote, or be elected has an account. Invitations are by email and appear on that person's home. No message is sent. Each member marks their own attendance and casts their own vote. The facilitator elected in a session creates the following session and chooses its topics. The session being held keeps the topics its creator chose. A session that already has topics can be held while the group creator and the previous facilitator are absent. Specs to reconcile: `specs/001-group-catalog`, `specs/003-invited-members`. Migration: name-only seats already stored are not members and cannot attend or vote until that email accepts an invitation. `specs/001-group-catalog` text that lets one signed-in member record the room, and that lets the facilitator elected in a later session set that same session's topics, is superseded by `specs/003-invited-members`.
+
+**Version**: 1.3.0 | **Ratified**: 2026-10-22 | **Last Amended**: 2026-10-31

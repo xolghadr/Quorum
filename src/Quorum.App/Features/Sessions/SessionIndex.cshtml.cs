@@ -18,6 +18,7 @@ public sealed class SessionIndexModel : SignedInPageModel
 
     public bool Published { get; private set; }
     public bool IsCreator { get; private set; }
+    public bool CanCreate { get; private set; }
     public bool HasSessions { get; private set; }
     public IReadOnlyList<SessionRow> Sessions { get; private set; } = [];
     public IReadOnlyList<TopicChoice> Chooser { get; private set; } = [];
@@ -73,6 +74,16 @@ public sealed class SessionIndexModel : SignedInPageModel
             .OrderBy(session => session.Number)
             .ToListAsync(cancellationToken);
         HasSessions = sessions.Count > 0;
+        var waiting = sessions.Any(session => session.FacilitatorMembershipId is null);
+        var latestFacilitator = sessions
+            .Where(session => session.FacilitatorMembershipId is not null)
+            .OrderByDescending(session => session.Number)
+            .Select(session => session.FacilitatorMembershipId)
+            .FirstOrDefault();
+        var self = await _db.Memberships.FirstOrDefaultAsync(
+            member => member.GroupId == OpenGroupId && member.AccountId == AccountId && member.RemovedAt == null,
+            cancellationToken);
+        CanCreate = Published && !waiting && (IsCreator || (self is not null && latestFacilitator == self.Id));
         var rows = new List<SessionRow>();
         foreach (var session in sessions)
         {

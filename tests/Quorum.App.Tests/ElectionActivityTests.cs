@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Quorum.App.Features.Accounts;
 using Quorum.App.Features.Groups;
+using Quorum.App.Features.Sessions;
 using Quorum.App.Features.Shared;
 using Quorum.App.Infrastructure.Logging;
 using Quorum.App.Infrastructure.Persistence;
@@ -29,7 +30,10 @@ public sealed class ElectionActivityTests : IAsyncLifetime
         await using var lab = QuorumLab.Open(_database.ConnectionString);
         var owner = (await lab.Accounts.RegisterAsync("ada@example.com", Password)).Account!;
         var groupId = new GroupId((await lab.Groups.CreateAsync(owner.Id, "North", "Ada")).Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(groupId, owner.Id, "Bea")).Status);
+        var beaAccount = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var bea = MembershipRows.Account(groupId, beaAccount.Id, "Bea", lab.Clock.UtcNow);
+        lab.Db.Memberships.Add(bea);
+        await lab.Db.SaveChangesAsync();
         var root = RoadmapFiles.WriteFixture(Path.Combine(Path.GetTempPath(), "quorum-elect-" + Guid.NewGuid().ToString("N")));
         try
         {
@@ -42,10 +46,11 @@ public sealed class ElectionActivityTests : IAsyncLifetime
             Assert.Equal(ActivityRecord.Succeeded, topics.Outcome);
             Assert.DoesNotContain(await lab.Db.ActivityRecords.Select(row => row.Attempt).ToListAsync(), attempt => attempt == "save-topics");
 
-            var members = await lab.Db.Memberships.Where(member => member.GroupId == groupId).Select(member => member.Id).ToListAsync();
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, owner.Id, sessionId, members)).Status);
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, owner.Id, sessionId, members[0], members[0])).Status);
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, owner.Id, sessionId, members[1], members[0])).Status);
+            var adaMember = await lab.Db.Memberships.SingleAsync(member => member.AccountId == owner.Id);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, owner.Id, sessionId, adaMember.Id, true)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, beaAccount.Id, sessionId, bea.Id, true)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, owner.Id, sessionId, adaMember.Id, adaMember.Id)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, beaAccount.Id, sessionId, bea.Id, adaMember.Id)).Status);
         }
         finally
         {
@@ -84,8 +89,28 @@ public sealed class ElectionActivityTests : IAsyncLifetime
             using var ada = Browser(app);
             await Register(ada, "ada@example.com");
             await CreateGroup(ada, "North", "Ada");
-            await AddMember(ada, "Bea");
-            await AddMember(ada, "Gus");
+            await using (var seed = _database.CreateContext())
+            {
+                var north = await seed.Groups.SingleAsync(group => group.Name == "North");
+                var beaAccount = new Account
+                {
+                    Id = AccountId.New(),
+                    Email = "bea@example.com",
+                    PasswordHash = "not-used",
+                    CreatedAt = DateTimeOffset.UnixEpoch,
+                };
+                var gusAccount = new Account
+                {
+                    Id = AccountId.New(),
+                    Email = "gus@example.com",
+                    PasswordHash = "not-used",
+                    CreatedAt = DateTimeOffset.UnixEpoch,
+                };
+                seed.Accounts.AddRange(beaAccount, gusAccount);
+                seed.Memberships.Add(MembershipRows.Account(north.Id, beaAccount.Id, "Bea", DateTimeOffset.UnixEpoch));
+                seed.Memberships.Add(MembershipRows.Account(north.Id, gusAccount.Id, "Gus", DateTimeOffset.UnixEpoch));
+                await seed.SaveChangesAsync();
+            }
             using var other = Browser(app);
             await Register(other, "other@example.com");
             await CreateGroup(other, "South", "Other");
@@ -104,14 +129,22 @@ public sealed class ElectionActivityTests : IAsyncLifetime
             ]);
             var sessionPath = RedirectPath(created);
             await using var db = _database.CreateContext();
-            var members = await db.Memberships
+            var people = await db.Memberships
                 .Where(member => member.DisplayName == "Ada" || member.DisplayName == "Bea" || member.DisplayName == "Gus")
-                .Select(member => member.Id.Value)
                 .ToListAsync();
-            Assert.Equal(3, members.Count);
+            Assert.Equal(3, people.Count);
             var sessionId = Guid.Parse(sessionPath.Split('/')[2]);
-            await Post(ada, sessionPath, $"/sessions/{sessionId}/attendance", members.Select(id => new KeyValuePair<string, string>("members", id.ToString())).ToList());
-            var adaId = await db.Memberships.Where(member => member.DisplayName == "Ada").Select(member => member.Id.Value).SingleAsync();
+            foreach (var person in people)
+            {
+                db.SessionAttendance.Add(new SessionAttendance
+                {
+                    SessionId = new SessionId(sessionId),
+                    MembershipId = person.Id,
+                });
+            }
+
+            await db.SaveChangesAsync();
+            var adaId = people.Single(member => member.DisplayName == "Ada").Id.Value;
             var voted = await Post(ada, sessionPath, $"/sessions/{sessionId}/votes",
             [
                 new("voterId", adaId.ToString()),

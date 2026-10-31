@@ -116,7 +116,8 @@ public class AccountGroupTests : IAsyncLifetime
         Assert.Equal(2, await lab.Db.TopicProgress.CountAsync(progress => progress.GroupId == north));
 
         for (var number = 2; number <= Group.MemberMax; number++)
-            Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Member " + number)).Status);
+            lab.Db.Memberships.Add(MembershipRows.NameOnly(north, "Member " + number, lab.Clock.UtcNow));
+        await lab.Db.SaveChangesAsync();
         Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, "Member 9")).Status);
         Assert.Equal(Group.MemberMax, await lab.Db.Memberships.CountAsync(member => member.GroupId == north && member.RemovedAt == null));
         Assert.Equal(1, await lab.Db.Memberships.CountAsync(member => member.GroupId == south && member.RemovedAt == null));

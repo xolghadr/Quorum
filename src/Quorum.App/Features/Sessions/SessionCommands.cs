@@ -35,24 +35,17 @@ public sealed class SessionCommands
         var actor = await FindActor(groupId, accountId, cancellationToken);
         if (actor is null)
             return await Refuse(accountId, groupId, sessionId: null, memberId: null, "create-session", CommandOutcome.NotFound(), cancellationToken);
+        if (!await MayPlan(actor, groupId, accountId, cancellationToken))
+            return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
+        if (await _db.Sessions.AnyAsync(session => session.GroupId == groupId && session.FacilitatorMembershipId == null, cancellationToken))
+            return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
+        if (!await TopicListValid(topicIds, cancellationToken))
+            return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
 
         var existingNumbers = await _db.Sessions
             .Where(session => session.GroupId == groupId)
             .Select(session => session.Number)
             .ToListAsync(cancellationToken);
-        var isFirst = existingNumbers.Count == 0;
-        if (isFirst)
-        {
-            if (actor.Group.CreatorAccountId != accountId)
-                return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
-            if (!await TopicListValid(topicIds, cancellationToken))
-                return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
-        }
-        else if (topicIds.Count > 0)
-        {
-            return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
-        }
-
         var session = new Session
         {
             Id = SessionId.New(),
@@ -63,14 +56,18 @@ public sealed class SessionCommands
         };
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         _db.Sessions.Add(session);
-        await _db.SaveChangesAsync(cancellationToken);
-        if (isFirst)
+        try
         {
+            await _db.SaveChangesAsync(cancellationToken);
             await AddTopics(_db, groupId, session.Id, topicIds, previous: [], cancellationToken);
             await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
-
-        await transaction.CommitAsync(cancellationToken);
+        catch (DbUpdateException)
+        {
+            _db.ChangeTracker.Clear();
+            return await Refuse(accountId, groupId, sessionId: null, actor.Membership.Id, "create-session", CommandOutcome.Refused(), cancellationToken);
+        }
         await RecordAsync(new ActivityWrite("create-session", true, accountId.Value, groupId.Value, session.Id.Value, actor.Membership.Id.Value), cancellationToken);
         _log.Command("create-session", accountId, groupId, session.Id);
         return CommandOutcome.Ok(session.Id.Value);
@@ -97,15 +94,8 @@ public sealed class SessionCommands
         if (!await TopicListValid(topicIds, cancellationToken))
             return await Refuse(accountId, groupId, sessionId, actor.Membership.Id, "set-topics", CommandOutcome.Refused(), cancellationToken);
 
-        if (session.Number == 1)
-        {
-            if (session.FacilitatorMembershipId is not null || actor.Group.CreatorAccountId != accountId)
-                return await Refuse(accountId, groupId, sessionId, actor.Membership.Id, "set-topics", CommandOutcome.Refused(), cancellationToken);
-        }
-        else if (session.FacilitatorMembershipId is null)
-        {
+        if (session.CreatedByAccountId != accountId || session.FacilitatorMembershipId is not null)
             return await Refuse(accountId, groupId, sessionId, actor.Membership.Id, "set-topics", CommandOutcome.Refused(), cancellationToken);
-        }
 
         var previous = await _db.SessionTopics
             .Where(topic => topic.SessionId == sessionId)
@@ -171,6 +161,19 @@ public sealed class SessionCommands
             progress => progress.GroupId == groupId && topicIds.Contains(progress.TopicId) && progress.PickCount >= 1,
             cancellationToken);
         return picked == topicIds.Count;
+    }
+
+    private async Task<bool> MayPlan(Actor actor, GroupId groupId, AccountId accountId, CancellationToken cancellationToken)
+    {
+        if (actor.Group.CreatorAccountId == accountId)
+            return true;
+
+        var latest = await _db.Sessions
+            .Where(session => session.GroupId == groupId && session.FacilitatorMembershipId != null)
+            .OrderByDescending(session => session.Number)
+            .Select(session => session.FacilitatorMembershipId)
+            .FirstOrDefaultAsync(cancellationToken);
+        return latest == actor.Membership.Id;
     }
 
     private async Task<Actor?> FindActor(GroupId groupId, AccountId accountId, CancellationToken cancellationToken)

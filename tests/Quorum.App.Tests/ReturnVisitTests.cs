@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Quorum.App.Features.Accounts;
+using Quorum.App.Features.Sessions;
 using Quorum.App.Infrastructure.Persistence;
 using Quorum.App.SharedKernel;
 using Quorum.Tests.Support;
@@ -156,20 +157,35 @@ public class ReturnVisitTests : IAsyncLifetime
             Assert.Equal(1, await db.Memberships.CountAsync(member => member.AccountId == account.Id && member.RemovedAt == null));
         }
 
-        Assert.StartsWith("/members", RedirectPath(await Post(ada, "/members", "/members", [new("DisplayName", "Bea")])));
         Guid adaId;
         Guid beaId;
         await using (var db = QuorumDbContext.Create(_database.ConnectionString))
         {
-            var rows = await db.Memberships.Where(member => member.RemovedAt == null).ToListAsync();
-            adaId = rows.Single(member => member.DisplayName == "Ada").Id.Value;
-            beaId = rows.Single(member => member.DisplayName == "Bea").Id.Value;
+            var adaMember = await db.Memberships.SingleAsync(member => member.DisplayName == "Ada");
+            var beaAccount = new Account
+            {
+                Id = AccountId.New(),
+                Email = "bea@example.com",
+                PasswordHash = "not-used",
+                CreatedAt = DateTimeOffset.UnixEpoch,
+            };
+            var bea = MembershipRows.Account(adaMember.GroupId, beaAccount.Id, "Bea", DateTimeOffset.UnixEpoch);
+            db.Accounts.Add(beaAccount);
+            db.Memberships.Add(bea);
+            db.SessionAttendance.Add(new SessionAttendance
+            {
+                SessionId = new SessionId(Guid.Parse(sessionId)),
+                MembershipId = bea.Id,
+            });
+            await db.SaveChangesAsync();
+            adaId = adaMember.Id.Value;
+            beaId = bea.Id.Value;
         }
 
         Assert.StartsWith(sessionPath, RedirectPath(await Post(ada, sessionPath, $"/sessions/{sessionId}/attendance",
         [
-            new("members", adaId.ToString()),
-            new("members", beaId.ToString()),
+            new("memberId", adaId.ToString()),
+            new("present", "true"),
         ])));
         Assert.StartsWith(sessionPath, RedirectPath(await Post(secondBrowser, sessionPath, $"/sessions/{sessionId}/votes",
         [

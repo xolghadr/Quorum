@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Quorum.App.Features.Groups;
 using Quorum.App.Features.Shared;
+using Quorum.App.Infrastructure.Auth;
 using Quorum.App.Infrastructure.Logging;
 using Quorum.App.Infrastructure.Persistence;
 using Quorum.App.SharedKernel;
@@ -25,27 +27,31 @@ public sealed class SessionDetailModel : SignedInPageModel
     public bool CanEditTopics { get; private set; }
     public bool VotingLocked { get; private set; }
     public IReadOnlyList<TopicRow> Topics { get; private set; } = [];
-    public IReadOnlyList<PersonRow> ActiveMembers { get; private set; } = [];
     public IReadOnlyList<PersonRow> Present { get; private set; } = [];
-    public IReadOnlyList<PersonRow> Voters { get; private set; } = [];
+    public IReadOnlyList<PersonRow> Candidates { get; private set; } = [];
+    public Guid? SelfId { get; private set; }
+    public bool SelfPresent { get; private set; }
+    public bool CanVote { get; private set; }
     public IReadOnlyList<VoteRow> Votes { get; private set; } = [];
     public IReadOnlyList<TopicChoice> Chooser { get; private set; } = [];
     public string? Error { get; set; }
 
     public async Task<IActionResult> OnGetAsync(Guid sessionId, CancellationToken cancellationToken)
     {
-        var gate = await RequireGroupAsync(_db, cancellationToken);
-        if (gate is not null)
-            return gate;
+        if (SignInSession.Account(User) is not { } accountId)
+            return Challenge();
 
         var id = new SessionId(sessionId);
-        var session = await _db.Sessions.FirstOrDefaultAsync(
-            row => row.Id == id && row.GroupId == OpenGroupId,
-            cancellationToken);
+        var session = await _db.Sessions.FirstOrDefaultAsync(row => row.Id == id, cancellationToken);
         if (session is null)
             return NotFound();
 
-        var group = await _db.Groups.FirstAsync(row => row.Id == OpenGroupId, cancellationToken);
+        var belongs = await _db.Memberships.AnyAsync(
+            member => member.AccountId == accountId && member.GroupId == session.GroupId && member.RemovedAt == null,
+            cancellationToken);
+        if (!belongs || OpenGroupId != session.GroupId)
+            return NotFound();
+
         SessionId = sessionId;
         Number = session.Number;
         CreatedOn = session.CreatedOn;
@@ -58,10 +64,7 @@ public sealed class SessionDetailModel : SignedInPageModel
                 .FirstOrDefaultAsync(cancellationToken) ?? "not elected";
         }
 
-        var isCreator = group.CreatorAccountId == AccountId;
-        CanEditTopics = session.Number == 1
-            ? session.FacilitatorMembershipId is null && isCreator
-            : session.FacilitatorMembershipId is not null;
+        CanEditTopics = session.CreatedByAccountId == AccountId && session.FacilitatorMembershipId is null;
 
         Topics = await (
             from link in _db.SessionTopics
@@ -70,11 +73,10 @@ public sealed class SessionDetailModel : SignedInPageModel
             orderby link.Position
             select new TopicRow(topic.Key, topic.Title)).ToListAsync(cancellationToken);
 
-        ActiveMembers = await _db.Memberships
-            .Where(member => member.GroupId == OpenGroupId && member.RemovedAt == null)
-            .OrderBy(member => member.CreatedAt)
-            .Select(member => new PersonRow(member.Id.Value, member.DisplayName))
-            .ToListAsync(cancellationToken);
+        var self = await _db.Memberships.FirstOrDefaultAsync(
+            member => member.GroupId == OpenGroupId && member.AccountId == AccountId && member.RemovedAt == null,
+            cancellationToken);
+        SelfId = self?.Id.Value;
 
         Present = await (
             from row in _db.SessionAttendance
@@ -82,10 +84,16 @@ public sealed class SessionDetailModel : SignedInPageModel
             where row.SessionId == id
             select new PersonRow(member.Id.Value, member.DisplayName)).ToListAsync(cancellationToken);
 
-        Voters = await (
+        var voters = await (
             from row in _db.SessionVoters
             join member in _db.Memberships on row.MembershipId equals member.Id
             where row.SessionId == id
+            select new PersonRow(member.Id.Value, member.DisplayName)).ToListAsync(cancellationToken);
+
+        var eligiblePresent = await (
+            from row in _db.SessionAttendance
+            join member in _db.Memberships on row.MembershipId equals member.Id
+            where row.SessionId == id && member.AccountId != null && member.RemovedAt == null
             select new PersonRow(member.Id.Value, member.DisplayName)).ToListAsync(cancellationToken);
 
         Votes = await (
@@ -94,6 +102,15 @@ public sealed class SessionDetailModel : SignedInPageModel
             join candidate in _db.Memberships on vote.CandidateMembershipId equals candidate.Id
             where vote.SessionId == id
             select new VoteRow(voter.Id.Value, voter.DisplayName, candidate.DisplayName)).ToListAsync(cancellationToken);
+
+        SelfPresent = self is not null && Present.Any(person => person.Id == self.Id.Value);
+        var hasVoted = self is not null && Votes.Any(vote => vote.VoterId == self.Id.Value);
+        var opening = voters.Count == 0
+            && self is not null
+            && eligiblePresent.Any(person => person.Id == self.Id.Value)
+            && eligiblePresent.Count is >= 2 and <= Group.MemberMax;
+        CanVote = !VotingLocked && self is not null && !hasVoted && (voters.Any(person => person.Id == self.Id.Value) || opening);
+        Candidates = voters.Count > 0 ? voters : eligiblePresent;
 
         if (CanEditTopics)
             Chooser = await SessionCommands.ChooserAsync(_db, OpenGroupId!.Value, cancellationToken);

@@ -28,7 +28,10 @@ public sealed class ActivityDurabilityTests : IAsyncLifetime
         var account = (await lab.Accounts.RegisterAsync("ada@example.com", Password)).Account!;
         var group = await lab.Groups.CreateAsync(account.Id, "North", "Ada");
         var groupId = new GroupId(group.Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(groupId, account.Id, "Bea")).Status);
+        var beaAccount = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var bea = MembershipRows.Account(groupId, beaAccount.Id, "Bea", lab.Clock.UtcNow);
+        lab.Db.Memberships.Add(bea);
+        await lab.Db.SaveChangesAsync();
         var root = RoadmapFiles.WriteFixture(Path.Combine(Path.GetTempPath(), "quorum-keep-" + Guid.NewGuid().ToString("N")));
         Guid sessionId;
         try
@@ -37,17 +40,19 @@ public sealed class ActivityDurabilityTests : IAsyncLifetime
             var topicIds = await lab.Db.Topics.OrderBy(topic => topic.Key).Select(topic => topic.Id).Take(2).ToListAsync();
             var created = await lab.Sessions.CreateAsync(groupId, account.Id, topicIds);
             sessionId = created.Id!.Value;
-            var members = await lab.Db.Memberships.Where(member => member.GroupId == groupId).Select(member => member.Id).ToListAsync();
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, account.Id, new SessionId(sessionId), members)).Status);
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, account.Id, new SessionId(sessionId), members[0], members[0])).Status);
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, account.Id, new SessionId(sessionId), members[1], members[0])).Status);
+            var adaMember = await lab.Db.Memberships.SingleAsync(member => member.AccountId == account.Id);
+            var id = new SessionId(sessionId);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, account.Id, id, adaMember.Id, true)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, beaAccount.Id, id, bea.Id, true)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, account.Id, id, adaMember.Id, adaMember.Id)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, beaAccount.Id, id, bea.Id, adaMember.Id)).Status);
         }
         finally
         {
             Directory.Delete(root, recursive: true);
         }
 
-        var oldReference = (await lab.Db.ActivityRecords.SingleAsync(row => row.Attempt == "register")).Reference;
+        var oldReference = (await lab.Db.ActivityRecords.SingleAsync(row => row.Attempt == "register" && row.AccountId == account.Id.Value)).Reference;
         var export = new RecordingExport { Throw = true };
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {

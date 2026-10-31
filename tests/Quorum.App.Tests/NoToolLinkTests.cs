@@ -54,7 +54,10 @@ public sealed class NoToolLinkTests : IAsyncLifetime
         await using var lab = QuorumLab.Open(_database.ConnectionString);
         var owner = (await lab.Accounts.RegisterAsync("ada@example.com", Password)).Account!;
         var groupId = new GroupId((await lab.Groups.CreateAsync(owner.Id, "North", "Ada")).Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(groupId, owner.Id, "Bea")).Status);
+        var beaAccount = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var bea = MembershipRows.Account(groupId, beaAccount.Id, "Bea", lab.Clock.UtcNow);
+        lab.Db.Memberships.Add(bea);
+        await lab.Db.SaveChangesAsync();
         var root = RoadmapFiles.WriteFixture(Path.Combine(Path.GetTempPath(), "quorum-export-" + Guid.NewGuid().ToString("N")));
         try
         {
@@ -62,10 +65,11 @@ public sealed class NoToolLinkTests : IAsyncLifetime
             var topicIds = await lab.Db.Topics.OrderBy(topic => topic.Key).Select(topic => topic.Id).Take(2).ToListAsync();
             var created = await lab.Sessions.CreateAsync(groupId, owner.Id, topicIds);
             var sessionId = new SessionId(created.Id!.Value);
-            var members = await lab.Db.Memberships.Where(member => member.GroupId == groupId).Select(member => member.Id).ToListAsync();
-            await lab.Election.SaveAttendanceAsync(groupId, owner.Id, sessionId, members);
-            await lab.Election.CastVoteAsync(groupId, owner.Id, sessionId, members[0], members[0]);
-            await lab.Election.CastVoteAsync(groupId, owner.Id, sessionId, members[1], members[0]);
+            var adaMember = await lab.Db.Memberships.SingleAsync(member => member.AccountId == owner.Id);
+            await lab.Election.SaveAttendanceAsync(groupId, owner.Id, sessionId, adaMember.Id, true);
+            await lab.Election.SaveAttendanceAsync(groupId, beaAccount.Id, sessionId, bea.Id, true);
+            await lab.Election.CastVoteAsync(groupId, owner.Id, sessionId, adaMember.Id, adaMember.Id);
+            await lab.Election.CastVoteAsync(groupId, beaAccount.Id, sessionId, bea.Id, adaMember.Id);
         }
         finally
         {

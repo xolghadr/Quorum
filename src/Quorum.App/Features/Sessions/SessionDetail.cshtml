@@ -32,17 +32,14 @@ else
         <li>@person.DisplayName</li>
     }
 </ul>
-<form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/attendance">
-    @foreach (var person in Model.ActiveMembers)
-    {
-        var selected = Model.Present.Any(row => row.Id == person.Id);
-        <label>
-            <input type="checkbox" name="members" value="@person.Id" @(selected ? "checked" : null) />
-            @person.DisplayName
-        </label>
-    }
-    <button type="submit">Save attendance</button>
-</form>
+@if (Model.SelfId is { } selfId)
+{
+    <form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/attendance">
+        <input type="hidden" name="memberId" value="@selfId" />
+        <input type="hidden" name="present" value="@(Model.SelfPresent ? "false" : "true")" />
+        <button type="submit">@(Model.SelfPresent ? "Mark not present" : "Mark present")</button>
+    </form>
+}
 @if (Model.CanEditTopics)
 {
     <form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/topics">
@@ -77,28 +74,22 @@ else
     </form>
 }
 <h2>Votes</h2>
-@if (!Model.VotingLocked)
+@if (Model.CanVote && Model.SelfId is { } voterId)
 {
-    var candidates = Model.Voters.Count > 0 ? Model.Voters : Model.Present;
-    var pending = (Model.Voters.Count > 0 ? Model.Voters : Model.Present)
-        .Where(person => Model.Votes.All(vote => vote.VoterId != person.Id));
-    foreach (var voter in pending)
-    {
-        <form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/votes">
-            <input type="hidden" name="voterId" value="@voter.Id" />
-            <label>@voter.DisplayName
-                <select name="candidateId">
-                    @foreach (var candidate in candidates)
-                    {
-                        if (candidates.Count >= 3 && candidate.Id == voter.Id)
-                            continue;
-                        <option value="@candidate.Id">@candidate.DisplayName</option>
-                    }
-                </select>
-            </label>
-            <button type="submit">Record vote</button>
-        </form>
-    }
+    <form method="post" asp-antiforgery="true" action="/sessions/@Model.SessionId/votes">
+        <input type="hidden" name="voterId" value="@voterId" />
+        <label>Your vote
+            <select name="candidateId">
+                @foreach (var candidate in Model.Candidates)
+                {
+                    if (Model.Candidates.Count >= 3 && candidate.Id == voterId)
+                        continue;
+                    <option value="@candidate.Id">@candidate.DisplayName</option>
+                }
+            </select>
+        </label>
+        <button type="submit">Record vote</button>
+    </form>
 }
 <ul>
     @foreach (var vote in Model.Votes)

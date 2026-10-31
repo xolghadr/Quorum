@@ -264,6 +264,48 @@ namespace Quorum.App.Infrastructure.Persistence.Migrations
                     b.ToTable("Groups");
                 });
 
+            modelBuilder.Entity("Quorum.App.Features.Groups.Invitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("DeclinedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailKey")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InvitedByAccountId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InvitedByAccountId");
+
+                    b.HasIndex("GroupId", "EmailKey")
+                        .IsUnique()
+                        .HasFilter("\"AcceptedAt\" IS NULL AND \"DeclinedAt\" IS NULL AND \"CancelledAt\" IS NULL");
+
+                    b.ToTable("Invitations", t =>
+                        {
+                            t.HasCheckConstraint("CK_Invitations_one_outcome", "(CASE WHEN \"AcceptedAt\" IS NULL THEN 0 ELSE 1 END\n + CASE WHEN \"DeclinedAt\" IS NULL THEN 0 ELSE 1 END\n + CASE WHEN \"CancelledAt\" IS NULL THEN 0 ELSE 1 END) <= 1");
+                        });
+                });
+
             modelBuilder.Entity("Quorum.App.Features.Groups.Membership", b =>
                 {
                     b.Property<Guid>("Id")
@@ -325,6 +367,11 @@ namespace Quorum.App.Infrastructure.Persistence.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("GroupId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Sessions_GroupId_Waiting")
+                        .HasFilter("\"FacilitatorMembershipId\" IS NULL");
 
                     b.HasIndex("GroupId", "Number")
                         .IsUnique();
@@ -554,6 +601,21 @@ namespace Quorum.App.Infrastructure.Persistence.Migrations
                     b.HasOne("Quorum.App.Features.Accounts.Account", null)
                         .WithMany()
                         .HasForeignKey("CreatorAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Quorum.App.Features.Groups.Invitation", b =>
+                {
+                    b.HasOne("Quorum.App.Features.Groups.Group", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Quorum.App.Features.Accounts.Account", null)
+                        .WithMany()
+                        .HasForeignKey("InvitedByAccountId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

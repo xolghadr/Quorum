@@ -45,7 +45,7 @@ else
             </li>
         }
     </ul>
-    @if (!Model.HasSessions && Model.IsCreator)
+    @if (Model.CanCreate)
     {
         <form method="post" asp-antiforgery="true" action="/sessions">
             <label>Topic 1
@@ -75,13 +75,7 @@ else
                     }
                 </select>
             </label>
-            <button type="submit">Create the first session</button>
-        </form>
-    }
-    else if (Model.HasSessions)
-    {
-        <form method="post" asp-antiforgery="true" action="/sessions">
-            <button type="submit">Create the next session</button>
+            <button type="submit">Create the session</button>
         </form>
     }
     <p><a href="/catalog">Catalog</a></p>

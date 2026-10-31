@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Quorum.App.Features.Sessions;
 using Quorum.App.Features.Shared;
 using Quorum.App.Infrastructure.Logging;
 using Quorum.App.Infrastructure.Persistence;
@@ -14,12 +15,14 @@ public sealed class RosterCommands
     private readonly QuorumDbContext _db;
     private readonly IClock _clock;
     private readonly SafeLog _log;
+    private readonly Election _election;
 
-    public RosterCommands(QuorumDbContext db, IClock clock, SafeLog log)
+    public RosterCommands(QuorumDbContext db, IClock clock, SafeLog log, Election election)
     {
         _db = db;
         _clock = clock;
         _log = log;
+        _election = election;
     }
 
     public async Task<CommandOutcome> AddAsync(
@@ -29,31 +32,11 @@ public sealed class RosterCommands
         CancellationToken cancellationToken = default)
     {
         _log.Begin();
+        _ = displayName;
         var group = await OwnedGroup(groupId, actorId, cancellationToken);
         if (group is null)
             return await Refuse("add-member", actorId, groupId, null, CommandOutcome.NotFound(), cancellationToken);
-        if (!Membership.DisplayNameAccepted(displayName, out var shown))
-            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
-
-        var active = await Active(groupId, cancellationToken);
-        if (active.Count >= Group.MemberMax)
-            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
-        if (active.Any(member => member.DisplayNameKey == Membership.KeyFor(shown)))
-            return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
-
-        var membership = new Membership
-        {
-            Id = MemberId.New(),
-            GroupId = groupId,
-            DisplayName = shown,
-            DisplayNameKey = Membership.KeyFor(shown),
-            CreatedAt = _clock.UtcNow,
-        };
-        _db.Memberships.Add(membership);
-        await _db.SaveChangesAsync(cancellationToken);
-        await RecordAsync(new ActivityWrite("add-member", true, actorId.Value, groupId.Value, MemberId: membership.Id.Value), cancellationToken);
-        _log.Command("add-member", actorId, groupId);
-        return CommandOutcome.Ok();
+        return await Refuse("add-member", actorId, groupId, null, CommandOutcome.Refused(), cancellationToken);
     }
 
     public async Task<CommandOutcome> RenameAsync(
@@ -75,6 +58,8 @@ public sealed class RosterCommands
             cancellationToken);
         if (membership is null)
             return await Refuse("rename-member", actorId, groupId, memberId, CommandOutcome.NotFound(), cancellationToken);
+        if (membership.AccountId is null)
+            return await Refuse("rename-member", actorId, groupId, memberId, CommandOutcome.Refused(), cancellationToken);
 
         var key = Membership.KeyFor(shown);
         var collision = await _db.Memberships.AnyAsync(
@@ -113,10 +98,39 @@ public sealed class RosterCommands
         if (membership.AccountId == group.CreatorAccountId)
             return await Refuse("remove-member", actorId, groupId, memberId, CommandOutcome.Refused(), cancellationToken);
 
+        return await EndMembershipAsync(groupId, actorId, membership, "remove-member", cancellationToken);
+    }
+
+    public async Task<CommandOutcome> LeaveAsync(
+        GroupId groupId,
+        AccountId actorId,
+        CancellationToken cancellationToken = default)
+    {
+        _log.Begin();
+        var group = await _db.Groups.FirstOrDefaultAsync(row => row.Id == groupId, cancellationToken);
+        var membership = await _db.Memberships.FirstOrDefaultAsync(
+            member => member.GroupId == groupId && member.AccountId == actorId && member.RemovedAt == null,
+            cancellationToken);
+        if (group is null || membership is null)
+            return await Refuse("leave-group", actorId, groupId, membership?.Id, CommandOutcome.NotFound(), cancellationToken);
+        if (group.CreatorAccountId == actorId)
+            return await Refuse("leave-group", actorId, groupId, membership.Id, CommandOutcome.Refused(), cancellationToken);
+
+        return await EndMembershipAsync(groupId, actorId, membership, "leave-group", cancellationToken);
+    }
+
+    private async Task<CommandOutcome> EndMembershipAsync(
+        GroupId groupId,
+        AccountId actorId,
+        Membership membership,
+        string attempt,
+        CancellationToken cancellationToken)
+    {
         membership.RemovedAt = _clock.UtcNow;
+        await _election.ApplyDepartureAsync(groupId, membership.Id, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
-        await RecordAsync(new ActivityWrite("remove-member", true, actorId.Value, groupId.Value, MemberId: memberId.Value), cancellationToken);
-        _log.Command("remove-member", actorId, groupId);
+        await RecordAsync(new ActivityWrite(attempt, true, actorId.Value, groupId.Value, MemberId: membership.Id.Value), cancellationToken);
+        _log.Command(attempt, actorId, groupId);
         return CommandOutcome.Ok();
     }
 
@@ -148,7 +162,4 @@ public sealed class RosterCommands
             cancellationToken);
         return belongs ? group : null;
     }
-
-    private Task<List<Membership>> Active(GroupId groupId, CancellationToken cancellationToken) =>
-        _db.Memberships.Where(member => member.GroupId == groupId && member.RemovedAt == null).ToListAsync(cancellationToken);
 }

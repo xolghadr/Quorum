@@ -16,12 +16,17 @@ public sealed class AttendancePostModel : SignedInPageModel
         _log = log;
     }
 
-    public async Task<IActionResult> OnPostAsync(Guid sessionId, Guid[]? members, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostAsync(Guid sessionId, Guid memberId, bool present, CancellationToken cancellationToken)
     {
         if (OpenGroupId is not { } groupId)
             return Challenge();
-        var ids = (members ?? []).Select(id => new MemberId(id)).ToList();
-        var result = await _election.SaveAttendanceAsync(groupId, AccountId, new SessionId(sessionId), ids, cancellationToken);
+        var result = await _election.SaveAttendanceAsync(
+            groupId,
+            AccountId,
+            new SessionId(sessionId),
+            new MemberId(memberId),
+            present,
+            cancellationToken);
         if (result.Status == Shared.CommandStatus.NotFound)
             return NotFound();
         return Redirect(result.Succeeded ? $"/sessions/{sessionId}" : $"/sessions/{sessionId}?error=1" + _log.ReferenceParameter());

@@ -16,6 +16,7 @@ public sealed class QuorumDbContext : DbContext
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<Membership> Memberships => Set<Membership>();
+    public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<CatalogPublication> CatalogPublications => Set<CatalogPublication>();
     public DbSet<Track> Tracks => Set<Track>();
     public DbSet<Topic> Topics => Set<Topic>();

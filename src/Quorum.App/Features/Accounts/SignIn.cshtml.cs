@@ -43,6 +43,18 @@ public sealed class SignInModel : PageModel
         var memberships = await _db.Memberships
             .Where(member => member.AccountId == result.Account.Id && member.RemovedAt == null)
             .ToListAsync(cancellationToken);
+        var pendingInvitation = await _db.Invitations.AnyAsync(
+            invitation => invitation.EmailKey == result.Account.Email
+                && invitation.AcceptedAt == null
+                && invitation.DeclinedAt == null
+                && invitation.CancelledAt == null,
+            cancellationToken);
+        if (pendingInvitation)
+        {
+            await SignInSession.SignInAsync(HttpContext, result.Account.Id, null);
+            return Redirect("/groups");
+        }
+
         if (memberships.Count == 0)
         {
             await SignInSession.SignInAsync(HttpContext, result.Account.Id, null);

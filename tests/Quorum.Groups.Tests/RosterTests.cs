@@ -37,18 +37,24 @@ public class RosterTests : IAsyncLifetime
 
         Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, "   ")).Status);
         Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, new string('x', 41))).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, "  Bea  ")).Status);
         Assert.Equal(1, await ActiveCount(lab, north));
+        Assert.DoesNotContain("Bea", await ActiveNames(lab, north));
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "  Bea  ")).Status);
-        var bea = await lab.Db.Memberships.SingleAsync(member => member.GroupId == north && member.AccountId == null);
-        Assert.Equal("Bea", bea.DisplayName);
-        Assert.Null(bea.AccountId);
+        var legacy = MembershipRows.NameOnly(north, "Legacy", lab.Clock.UtcNow);
+        var beaAccount = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var bea = MembershipRows.Account(north, beaAccount.Id, "Bea", lab.Clock.UtcNow);
+        var calAccount = (await lab.Accounts.RegisterAsync("cal@example.com", Password)).Account!;
+        var cal = MembershipRows.Account(north, calAccount.Id, "Cal", lab.Clock.UtcNow);
+        lab.Db.Memberships.AddRange(legacy, bea, cal);
+        await lab.Db.SaveChangesAsync();
+        Assert.Equal("Legacy", legacy.DisplayName);
+        Assert.Null(legacy.AccountId);
         Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, " bea ")).Status);
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Cal")).Status);
-        var cal = await lab.Db.Memberships.SingleAsync(member => member.DisplayName == "Cal");
-
-        Assert.Equal(CommandStatus.Refused, (await lab.Roster.RenameAsync(north, owner.Id, bea.Id, " cal ")).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Roster.RenameAsync(north, owner.Id, legacy.Id, " cal ")).Status);
+        legacy.RemovedAt = lab.Clock.UtcNow;
+        await lab.Db.SaveChangesAsync();
         Assert.Equal(CommandStatus.Ok, (await lab.Roster.RenameAsync(north, owner.Id, ada.Id, "  Ada Owner  ")).Status);
         lab.Db.ChangeTracker.Clear();
         ada = await lab.Db.Memberships.SingleAsync(member => member.Id == ada.Id);
@@ -59,8 +65,11 @@ public class RosterTests : IAsyncLifetime
         var topics = await lab.Db.Topics.OrderBy(topic => topic.Key).Take(2).Select(topic => topic.Id).ToListAsync();
         var created = await lab.Sessions.CreateAsync(north, owner.Id, topics);
         var session = new SessionId(created.Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, session, [ada.Id, bea.Id])).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, session, ada.Id, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, beaAccount.Id, session, bea.Id, true)).Status);
         Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, owner.Id, session, ada.Id, bea.Id)).Status);
+        lab.Ties.Next = bea.Id;
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, beaAccount.Id, session, bea.Id, ada.Id)).Status);
         var picks = await lab.Db.TopicProgress.Where(progress => progress.GroupId == north).Select(progress => progress.PickCount).ToListAsync();
         var topicIds = await lab.Db.SessionTopics.Where(link => link.SessionId == session).Select(link => link.TopicId).ToListAsync();
 
@@ -73,16 +82,19 @@ public class RosterTests : IAsyncLifetime
         Assert.Contains(await lab.Db.SessionAttendance.Where(row => row.SessionId == session).Select(row => row.MembershipId).ToListAsync(), id => id == bea.Id);
         Assert.Contains(await lab.Db.SessionVoters.Where(row => row.SessionId == session).Select(row => row.MembershipId).ToListAsync(), id => id == bea.Id);
 
-        var later = new SessionId((await lab.Sessions.CreateAsync(north, owner.Id, [])).Id!.Value);
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, later, [ada.Id, bea.Id])).Status);
-        Assert.Empty(await lab.Db.SessionAttendance.Where(row => row.SessionId == later).ToListAsync());
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, later, [ada.Id, cal.Id])).Status);
+        var later = new SessionId((await lab.Sessions.CreateAsync(north, owner.Id, topics)).Id!.Value);
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, later, bea.Id, true)).Status);
+        Assert.DoesNotContain(bea.Id, await lab.Db.SessionAttendance.Where(row => row.SessionId == later).Select(row => row.MembershipId).ToListAsync());
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, later, ada.Id, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, later, cal.Id, true)).Status);
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, " Bea ")).Status);
+        lab.Db.Memberships.Add(MembershipRows.NameOnly(north, "Bea", lab.Clock.UtcNow));
+        await lab.Db.SaveChangesAsync();
         Assert.Equal(3, await ActiveCount(lab, north));
 
         for (var number = 4; number <= Group.MemberMax; number++)
-            Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Member " + number)).Status);
+            lab.Db.Memberships.Add(MembershipRows.NameOnly(north, "Member " + number, lab.Clock.UtcNow));
+        await lab.Db.SaveChangesAsync();
         Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, "Ninth")).Status);
         Assert.Equal(Group.MemberMax, await ActiveCount(lab, north));
 

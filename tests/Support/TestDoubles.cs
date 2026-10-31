@@ -98,6 +98,7 @@ public sealed class QuorumLab : IAsyncDisposable
     public required AccountCommands Accounts { get; init; }
     public required GroupCommands Groups { get; init; }
     public required RosterCommands Roster { get; init; }
+    public required InvitationCommands Invitations { get; init; }
     public required SessionCommands Sessions { get; init; }
     public required Election Election { get; init; }
     public required PublishCatalog Publish { get; init; }
@@ -123,6 +124,7 @@ public sealed class QuorumLab : IAsyncDisposable
         services.AddScoped<AccountCommands>();
         services.AddScoped<GroupCommands>();
         services.AddScoped<RosterCommands>();
+        services.AddScoped<InvitationCommands>();
         services.AddScoped<SessionCommands>();
         services.AddScoped<Election>();
         services.AddScoped<PublishCatalog>();
@@ -139,6 +141,7 @@ public sealed class QuorumLab : IAsyncDisposable
             Accounts = scope.ServiceProvider.GetRequiredService<AccountCommands>(),
             Groups = scope.ServiceProvider.GetRequiredService<GroupCommands>(),
             Roster = scope.ServiceProvider.GetRequiredService<RosterCommands>(),
+            Invitations = scope.ServiceProvider.GetRequiredService<InvitationCommands>(),
             Sessions = scope.ServiceProvider.GetRequiredService<SessionCommands>(),
             Election = scope.ServiceProvider.GetRequiredService<Election>(),
             Publish = scope.ServiceProvider.GetRequiredService<PublishCatalog>(),
@@ -150,6 +153,34 @@ public sealed class QuorumLab : IAsyncDisposable
         Scope.Dispose();
         await Provider.DisposeAsync();
     }
+}
+
+public static class MembershipRows
+{
+    public static Membership Account(
+        GroupId groupId,
+        AccountId accountId,
+        string displayName,
+        DateTimeOffset createdAt) =>
+        new()
+        {
+            Id = MemberId.New(),
+            GroupId = groupId,
+            AccountId = accountId,
+            DisplayName = displayName.Trim(),
+            DisplayNameKey = Membership.KeyFor(displayName.Trim()),
+            CreatedAt = createdAt,
+        };
+
+    public static Membership NameOnly(GroupId groupId, string displayName, DateTimeOffset createdAt) =>
+        new()
+        {
+            Id = MemberId.New(),
+            GroupId = groupId,
+            DisplayName = displayName.Trim(),
+            DisplayNameKey = Membership.KeyFor(displayName.Trim()),
+            CreatedAt = createdAt,
+        };
 }
 
 public static class RoadmapFiles

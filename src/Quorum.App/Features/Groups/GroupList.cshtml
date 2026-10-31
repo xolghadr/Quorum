@@ -6,6 +6,23 @@
     <p>@Model.Error</p>
     <partial name="/Features/Shared/_Reference.cshtml" />
 }
+@if (Model.Invitations.Count > 0)
+{
+    <h2>Invitations</h2>
+    <ul>
+        @foreach (var invitation in Model.Invitations)
+        {
+            <li>
+                <span>@invitation.GroupName</span>
+                <span>@invitation.InviterDisplayName</span>
+                <a href="/groups/invitations/@invitation.Id/accept">Accept</a>
+                <form method="post" asp-antiforgery="true" action="/groups/invitations/@invitation.Id/decline">
+                    <button type="submit">Decline</button>
+                </form>
+            </li>
+        }
+    </ul>
+}
 <ul>
     @foreach (var group in Model.Groups)
     {

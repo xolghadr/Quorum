@@ -70,11 +70,15 @@ public sealed class ActivityRedactionTests : IAsyncLifetime
         Assert.Equal(CommandStatus.Ok, group.Status);
         var groupId = new GroupId(group.Id!.Value);
         var added = await lab.Roster.AddAsync(groupId, account.Id, "Beatrice");
-        Assert.Equal(CommandStatus.Ok, added.Status);
-        var memberId = await lab.Db.Memberships
-            .Where(member => member.GroupId == groupId && member.DisplayName == "Beatrice")
-            .Select(member => member.Id)
-            .SingleAsync();
+        Assert.Equal(CommandStatus.Refused, added.Status);
+        var refusedAdd = await lab.Db.ActivityRecords.SingleAsync(row => row.Attempt == "add-member");
+        Assert.Equal(ActivityRecord.Refused, refusedAdd.Outcome);
+        Assert.DoesNotContain("Beatrice", JsonSerializer.Serialize(refusedAdd));
+        var bea = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var membership = MembershipRows.Account(groupId, bea.Id, "Beatrice", lab.Clock.UtcNow);
+        lab.Db.Memberships.Add(membership);
+        await lab.Db.SaveChangesAsync();
+        var memberId = membership.Id;
         Assert.Equal(CommandStatus.Ok, (await lab.Roster.RenameAsync(groupId, account.Id, memberId, "Bea")).Status);
         Assert.Equal(CommandStatus.Ok, (await lab.Roster.RemoveAsync(groupId, account.Id, memberId)).Status);
 
@@ -99,7 +103,8 @@ public sealed class ActivityRedactionTests : IAsyncLifetime
         Assert.All(rows, row => Assert.Equal(minute, row.AcceptedAt.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm")));
         Assert.Contains(rows, row => row.Attempt == "register" && row.AccountId == account.Id.Value);
         Assert.Contains(rows, row => row.Attempt == "create-group" && row.GroupId == groupId.Value && row.MemberId != null);
-        Assert.Contains(rows, row => row.Attempt == "add-member" && row.GroupId == groupId.Value && row.MemberId == memberId.Value);
+        Assert.Contains(rows, row => row.Attempt == "register" && row.AccountId == bea.Id.Value);
+        Assert.DoesNotContain(rows, row => row.Attempt == "add-member");
         Assert.Contains(rows, row => row.Attempt == "rename-member" && row.MemberId == memberId.Value);
         Assert.Contains(rows, row => row.Attempt == "remove-member" && row.MemberId == memberId.Value);
         var publication = Assert.Single(rows, row => row.Attempt == "publish-catalog");

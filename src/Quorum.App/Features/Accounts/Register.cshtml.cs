@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 using Quorum.App.Infrastructure.Auth;
+using Quorum.App.Infrastructure.Persistence;
 
 namespace Quorum.App.Features.Accounts;
 
@@ -9,10 +11,12 @@ namespace Quorum.App.Features.Accounts;
 public sealed class RegisterModel : PageModel
 {
     private readonly AccountCommands _accounts;
+    private readonly QuorumDbContext _db;
 
-    public RegisterModel(AccountCommands accounts)
+    public RegisterModel(AccountCommands accounts, QuorumDbContext db)
     {
         _accounts = accounts;
+        _db = db;
     }
 
     [BindProperty]
@@ -42,7 +46,13 @@ public sealed class RegisterModel : PageModel
             return Page();
         }
 
+        var pendingInvitation = await _db.Invitations.AnyAsync(
+            invitation => invitation.EmailKey == result.Account.Email
+                && invitation.AcceptedAt == null
+                && invitation.DeclinedAt == null
+                && invitation.CancelledAt == null,
+            cancellationToken);
         await SignInSession.SignInAsync(HttpContext, result.Account.Id, null);
-        return Redirect("/groups/new");
+        return Redirect(pendingInvitation ? "/groups" : "/groups/new");
     }
 }

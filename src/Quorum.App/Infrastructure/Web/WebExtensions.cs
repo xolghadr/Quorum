@@ -15,6 +15,7 @@ public static class WebExtensions
         builder.Services.AddScoped<AccountCommands>();
         builder.Services.AddScoped<GroupCommands>();
         builder.Services.AddScoped<RosterCommands>();
+        builder.Services.AddScoped<InvitationCommands>();
         builder.Services.AddScoped<SessionCommands>();
         builder.Services.AddScoped<Election>();
         builder.Services.AddSingleton<IFacilitatorTieBreak, EqualChanceTieBreak>();

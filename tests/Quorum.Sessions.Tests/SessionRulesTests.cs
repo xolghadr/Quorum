@@ -102,37 +102,33 @@ public class SessionRulesTests : IAsyncLifetime
         Assert.Equal(CommandStatus.Refused, (await lab.Sessions.SaveTopicsAsync(north, gusAccount.Id, first, [alpha, beta])).Status);
         Assert.Equal([beta, gamma], await TopicIds(lab, first));
 
-        var secondResult = await lab.Sessions.CreateAsync(north, gusAccount.Id, []);
-        Assert.Equal(CommandStatus.Ok, secondResult.Status);
-        var second = new SessionId(secondResult.Id!.Value);
-        var secondRow = await lab.Db.Sessions.SingleAsync(row => row.Id == second);
-        Assert.Equal(2, secondRow.Number);
-        Assert.Empty(await TopicIds(lab, second));
-        Assert.Empty(await lab.Db.SessionAttendance.Where(row => row.SessionId == second).ToListAsync());
-        Assert.Equal(CommandStatus.Refused, (await lab.Sessions.CreateAsync(north, owner.Id, [alpha, beta])).Status);
-        Assert.Equal(CommandStatus.Refused, (await lab.Sessions.SaveTopicsAsync(north, owner.Id, second, [alpha, beta])).Status);
-        Assert.Empty(await TopicIds(lab, second));
-
         var ada = await lab.Db.Memberships.SingleAsync(member => member.AccountId == owner.Id && member.GroupId == north);
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Bea")).Status);
-        var bea = await lab.Db.Memberships.SingleAsync(member => member.DisplayName == "Bea");
-        await Elect(lab, north, owner.Id, first, gus.Id, ada.Id, gus.Id);
+        var beaAccount = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var bea = MembershipRows.Account(north, beaAccount.Id, "Bea", lab.Clock.UtcNow);
+        lab.Db.Memberships.Add(bea);
+        await lab.Db.SaveChangesAsync();
+        await Elect(lab, north, first, gus.Id, ada.Id, gus.Id);
         Assert.Equal(gus.Id, await Facilitator(lab, first));
         Assert.Equal(CommandStatus.Refused, (await lab.Sessions.SaveTopicsAsync(north, owner.Id, first, [alpha, beta])).Status);
         Assert.Equal([beta, gamma], await TopicIds(lab, first));
 
-        await Elect(lab, north, owner.Id, second, bea.Id, ada.Id, bea.Id);
+        var secondResult = await lab.Sessions.CreateAsync(north, gusAccount.Id, [alpha, beta]);
+        Assert.Equal(CommandStatus.Ok, secondResult.Status);
+        var second = new SessionId(secondResult.Id!.Value);
+        var secondRow = await lab.Db.Sessions.SingleAsync(row => row.Id == second);
+        Assert.Equal(2, secondRow.Number);
+        Assert.Equal([alpha, beta], await TopicIds(lab, second));
+        Assert.Empty(await lab.Db.SessionAttendance.Where(row => row.SessionId == second).ToListAsync());
+        Assert.Equal(CommandStatus.Refused, (await lab.Sessions.CreateAsync(north, owner.Id, [alpha, gamma])).Status);
+        Assert.Equal(2, await Pick(lab, north, alpha));
+        Assert.Equal(2, await Pick(lab, north, beta));
+        Assert.Equal(2, await Pick(lab, north, gamma));
+
+        await Elect(lab, north, second, bea.Id, ada.Id, bea.Id);
         Assert.Equal(bea.Id, await Facilitator(lab, second));
         Assert.DoesNotContain(await Voters(lab, second), id => id == gus.Id);
-
-        Assert.Equal(CommandStatus.Ok, (await lab.Sessions.SaveTopicsAsync(north, gusAccount.Id, second, [alpha, beta, gamma])).Status);
-        Assert.Equal(2, await Pick(lab, north, alpha));
-        Assert.Equal(2, await Pick(lab, north, beta));
-        Assert.Equal(3, await Pick(lab, north, gamma));
-        Assert.Equal(CommandStatus.Ok, (await lab.Sessions.SaveTopicsAsync(north, owner.Id, second, [alpha, beta])).Status);
-        Assert.Equal(2, await Pick(lab, north, alpha));
-        Assert.Equal(2, await Pick(lab, north, beta));
-        Assert.Equal(3, await Pick(lab, north, gamma));
+        Assert.Equal(CommandStatus.Refused, (await lab.Sessions.SaveTopicsAsync(north, gusAccount.Id, second, [alpha, beta, gamma])).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Sessions.SaveTopicsAsync(north, owner.Id, second, [alpha, gamma])).Status);
         Assert.Equal([alpha, beta], await TopicIds(lab, second));
         Assert.Equal([alpha, beta, gamma], (await SessionCommands.ChooserAsync(lab.Db, north)).Select(choice => choice.Id).ToArray());
 
@@ -140,7 +136,7 @@ public class SessionRulesTests : IAsyncLifetime
         Assert.Equal(CommandStatus.NotFound, (await lab.Sessions.SaveTopicsAsync(south, other.Id, first, [alpha, beta])).Status);
         Assert.Equal(CommandStatus.NotFound, (await lab.Sessions.SaveTopicsAsync(north, other.Id, first, [alpha, beta])).Status);
         Assert.Equal(CommandStatus.NotFound, (await lab.Sessions.CreateAsync(north, other.Id, [])).Status);
-        Assert.Equal(CommandStatus.NotFound, (await lab.Election.SaveAttendanceAsync(north, other.Id, second, [ada.Id, bea.Id])).Status);
+        Assert.Equal(CommandStatus.NotFound, (await lab.Election.SaveAttendanceAsync(north, other.Id, second, ada.Id, true)).Status);
         Assert.Equal(CommandStatus.NotFound, (await lab.Election.CastVoteAsync(north, other.Id, second, ada.Id, bea.Id)).Status);
         lab.Db.ChangeTracker.Clear();
         Assert.Equal(picks, await lab.Db.TopicProgress.Where(progress => progress.GroupId == north).ToDictionaryAsync(progress => progress.TopicId, progress => progress.PickCount));
@@ -163,8 +159,11 @@ public class SessionRulesTests : IAsyncLifetime
         var beta = topics["01-alpha/beta-signal-topic"];
         var owner = (await lab.Accounts.RegisterAsync("ada@example.com", Password)).Account!;
         var north = new GroupId((await lab.Groups.CreateAsync(owner.Id, "North", "Ada")).Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Bea")).Status);
-        Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Cal")).Status);
+        var beaAccount = (await lab.Accounts.RegisterAsync("bea@example.com", Password)).Account!;
+        var calAccount = (await lab.Accounts.RegisterAsync("cal@example.com", Password)).Account!;
+        lab.Db.Memberships.Add(MembershipRows.Account(north, beaAccount.Id, "Bea", lab.Clock.UtcNow));
+        lab.Db.Memberships.Add(MembershipRows.Account(north, calAccount.Id, "Cal", lab.Clock.UtcNow));
+        await lab.Db.SaveChangesAsync();
         var members = await lab.Db.Memberships.Where(member => member.GroupId == north).ToDictionaryAsync(member => member.DisplayName, member => member.Id);
         var ada = members["Ada"];
         var bea = members["Bea"];
@@ -172,65 +171,77 @@ public class SessionRulesTests : IAsyncLifetime
 
         var created = await lab.Sessions.CreateAsync(north, owner.Id, [alpha, beta]);
         var first = new SessionId(created.Id!.Value);
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [ada])).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, ada, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, ada, true)).Status);
+        Assert.Equal([ada], await Present(lab, first));
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, MemberId.New(), true)).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, bea, true)).Status);
+        Assert.Equal([ada], await Present(lab, first));
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, owner.Id, first, ada, ada)).Status);
         Assert.Empty(await Voters(lab, first));
-        Assert.Empty(await Present(lab, first));
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [ada, ada])).Status);
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [ada, MemberId.New()])).Status);
-        Assert.Empty(await Present(lab, first));
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [ada, bea, cal])).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, beaAccount.Id, first, bea, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, first, cal, true)).Status);
         Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, owner.Id, first, ada, ada)).Status);
         Assert.Empty(await Voters(lab, first));
         Assert.Equal(3, (await Present(lab, first)).Count);
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [ada, bea])).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, first, cal, false)).Status);
         Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, owner.Id, first, ada, ada)).Status);
         Assert.Equal(new[] { ada, bea }.OrderBy(id => id.Value), (await Voters(lab, first)).OrderBy(id => id.Value));
         Assert.Equal(ada, await VoteChoice(lab, first, ada));
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [ada, bea, cal])).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, first, cal, true)).Status);
         Assert.Contains(cal, await Present(lab, first));
         Assert.DoesNotContain(cal, await Voters(lab, first));
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, owner.Id, first, cal, bea)).Status);
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, owner.Id, first, bea, cal)).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, calAccount.Id, first, cal, bea)).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, beaAccount.Id, first, bea, cal)).Status);
         Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, owner.Id, first, ada, bea)).Status);
         Assert.Equal(ada, await VoteChoice(lab, first, ada));
         Assert.Null(await Facilitator(lab, first));
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, [bea])).Status);
-        Assert.Equal([bea], await Present(lab, first));
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, first, ada, false)).Status);
+        Assert.Equal(new[] { bea, cal }.OrderBy(id => id.Value), (await Present(lab, first)).OrderBy(id => id.Value));
         Assert.Equal(ada, await VoteChoice(lab, first, ada));
         Assert.Contains(ada, await Voters(lab, first));
 
         lab.Ties.Next = ada;
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, owner.Id, first, bea, bea)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, beaAccount.Id, first, bea, bea)).Status);
         Assert.Equal(ada, await Facilitator(lab, first));
-        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, owner.Id, first, bea, ada)).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.CastVoteAsync(north, beaAccount.Id, first, bea, ada)).Status);
 
-        var second = new SessionId((await lab.Sessions.CreateAsync(north, owner.Id, [])).Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, second, [bea, cal])).Status);
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, owner.Id, second, bea, cal)).Status);
+        var second = new SessionId((await lab.Sessions.CreateAsync(north, owner.Id, [alpha, beta])).Id!.Value);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, beaAccount.Id, second, bea, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, second, cal, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, beaAccount.Id, second, bea, cal)).Status);
         Assert.Null(await Facilitator(lab, second));
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, owner.Id, second, cal, cal)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(north, calAccount.Id, second, cal, cal)).Status);
         Assert.Equal(cal, await Facilitator(lab, second));
         Assert.DoesNotContain(ada, await Voters(lab, second));
-        Assert.Equal(CommandStatus.Ok, (await lab.Sessions.SaveTopicsAsync(north, owner.Id, second, [alpha, beta])).Status);
+        Assert.Equal(CommandStatus.Refused, (await lab.Sessions.SaveTopicsAsync(north, owner.Id, second, [alpha, beta])).Status);
+        Assert.Equal([alpha, beta], await TopicIds(lab, second));
         Assert.Equal(2, await Pick(lab, north, alpha));
         Assert.Equal(2, await Pick(lab, north, beta));
 
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, second, [])).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, beaAccount.Id, second, bea, false)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, second, cal, false)).Status);
         Assert.Empty(await Present(lab, second));
         Assert.Equal(2, (await Voters(lab, second)).Count);
 
         for (var number = 4; number <= Group.MemberMax; number++)
-            Assert.Equal(CommandStatus.Ok, (await lab.Roster.AddAsync(north, owner.Id, "Member " + number)).Status);
+            lab.Db.Memberships.Add(MembershipRows.NameOnly(north, "Member " + number, lab.Clock.UtcNow));
+        await lab.Db.SaveChangesAsync();
         Assert.Equal(CommandStatus.Refused, (await lab.Roster.AddAsync(north, owner.Id, "Member 9")).Status);
         var everyone = await lab.Db.Memberships.Where(member => member.GroupId == north && member.RemovedAt == null).Select(member => member.Id).ToListAsync();
         Assert.Equal(Group.MemberMax, everyone.Count);
-        var third = new SessionId((await lab.Sessions.CreateAsync(north, owner.Id, [])).Id!.Value);
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, third, everyone)).Status);
-        Assert.Equal(Group.MemberMax, (await Present(lab, third)).Count);
+        var third = new SessionId((await lab.Sessions.CreateAsync(north, owner.Id, [alpha, beta])).Id!.Value);
+        var legacy = await lab.Db.Memberships.SingleAsync(member => member.GroupId == north && member.AccountId == null && member.DisplayName == "Member 4");
+        Assert.Equal(CommandStatus.Refused, (await lab.Election.SaveAttendanceAsync(north, owner.Id, third, legacy.Id, true)).Status);
+        Assert.Empty(await Present(lab, third));
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, owner.Id, third, ada, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, beaAccount.Id, third, bea, true)).Status);
+        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(north, calAccount.Id, third, cal, true)).Status);
+        Assert.Equal(3, (await Present(lab, third)).Count);
 
         var choice = new EqualChanceTieBreak().Choose([ada, bea]);
         Assert.Contains(choice, new[] { ada, bea });
@@ -254,16 +265,24 @@ public class SessionRulesTests : IAsyncLifetime
     private static async Task Elect(
         QuorumLab lab,
         GroupId groupId,
-        AccountId accountId,
         SessionId sessionId,
         MemberId winner,
         params MemberId[] present)
     {
-        Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, accountId, sessionId, present)).Status);
+        var accounts = await lab.Db.Memberships
+            .Where(member => present.Contains(member.Id))
+            .ToDictionaryAsync(member => member.Id, member => member.AccountId);
+        foreach (var memberId in present)
+        {
+            var accountId = accounts[memberId];
+            Assert.NotNull(accountId);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.SaveAttendanceAsync(groupId, accountId.Value, sessionId, memberId, true)).Status);
+        }
+
         foreach (var voter in present)
         {
             var candidate = present.Length >= 3 && voter == winner ? present.First(id => id != voter) : winner;
-            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, accountId, sessionId, voter, candidate)).Status);
+            Assert.Equal(CommandStatus.Ok, (await lab.Election.CastVoteAsync(groupId, accounts[voter]!.Value, sessionId, voter, candidate)).Status);
         }
 
         Assert.Equal(winner, await Facilitator(lab, sessionId));
